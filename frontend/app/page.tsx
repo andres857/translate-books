@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getHealth, uploadBook } from "@/lib/api";
+import { getHealth, uploadBook, type JobMode, type OcrLang } from "@/lib/api";
 import {
   BooksHero, CloudUpload, FlagES, FlagUK, IconArrowRight, IconChevron, IconInfo, IconWand, IconWarn,
   LogoBook, OpenBook, Rays, Sparkle,
@@ -18,6 +19,9 @@ export default function UploadPage() {
   const [error, setError] = useState<string | null>(null);
   const [maxMb, setMaxMb] = useState(200);
   const [configured, setConfigured] = useState(true);
+  const [mode, setMode] = useState<JobMode>("translate");
+  const [ocrLang, setOcrLang] = useState<OcrLang>("en");
+  const [correct, setCorrect] = useState(true);
 
   useEffect(() => {
     getHealth()
@@ -41,7 +45,7 @@ export default function UploadPage() {
     setBusy(true);
     setError(null);
     try {
-      const job = await uploadBook(file, rights);
+      const job = await uploadBook(file, rights, { mode, ocrLang, correct });
       router.push(`/jobs/${job.id}`);
     } catch (e) {
       setError((e as Error).message);
@@ -68,7 +72,9 @@ export default function UploadPage() {
       {!configured && (
         <div className="alert warn" role="status">
           <IconWarn />
-          <span>El servicio de traducción aún no está configurado. El administrador debe agregar la llave de DeepSeek.</span>
+          <span>
+            El modo de traducción elegido aún no está listo. Revísalo en <Link href="/settings">Ajustes</Link>.
+          </span>
         </div>
       )}
 
@@ -110,24 +116,57 @@ export default function UploadPage() {
           <input ref={inputRef} type="file" accept="application/pdf,.pdf" hidden onChange={(e) => pick(e.target.files?.[0])} />
         </div>
 
-        <div className="langs">
-          <label className="lang">
-            <FlagUK />
-            <span style={{ flex: 1 }}>
-              <small>Idioma de origen:</small>
-              <select aria-label="Idioma de origen" defaultValue="en"><option value="en">Inglés</option></select>
-            </span>
-            <IconChevron className="chev" />
-          </label>
-          <label className="lang">
-            <FlagES />
-            <span style={{ flex: 1 }}>
-              <small>Idioma de destino:</small>
-              <select aria-label="Idioma de destino" defaultValue="es"><option value="es">Español</option></select>
-            </span>
-            <IconChevron className="chev" />
-          </label>
+        <div className="modes" role="radiogroup" aria-label="Qué hacer con el libro" style={{ marginTop: 20 }}>
+          <button type="button" role="radio" aria-checked={mode === "translate"}
+            className={`mode ${mode === "translate" ? "on" : ""}`} onClick={() => setMode("translate")}>
+            <strong>Traducir al español</strong>
+            <span>PDF en español con el mismo diseño, y versión para Kindle.</span>
+          </button>
+          <button type="button" role="radio" aria-checked={mode === "digitize"}
+            className={`mode ${mode === "digitize" ? "on" : ""}`} onClick={() => setMode("digitize")}>
+            <strong>Solo digitalizar</strong>
+            <span>Convierte un PDF escaneado en uno con texto seleccionable y buscable, y versión para Kindle. Sin traducir.</span>
+          </button>
         </div>
+
+        {mode === "translate" ? (
+          <div className="langs">
+            <label className="lang">
+              <FlagUK />
+              <span style={{ flex: 1 }}>
+                <small>Idioma de origen:</small>
+                <select aria-label="Idioma de origen" defaultValue="en"><option value="en">Inglés</option></select>
+              </span>
+              <IconChevron className="chev" />
+            </label>
+            <label className="lang">
+              <FlagES />
+              <span style={{ flex: 1 }}>
+                <small>Idioma de destino:</small>
+                <select aria-label="Idioma de destino" defaultValue="es"><option value="es">Español</option></select>
+              </span>
+              <IconChevron className="chev" />
+            </label>
+          </div>
+        ) : (
+          <div className="form-grid">
+            <label>
+              Idioma del libro
+              <select value={ocrLang} onChange={(e) => setOcrLang(e.target.value as OcrLang)}>
+                <option value="en">Inglés</option>
+                <option value="es">Español</option>
+                <option value="auto">Inglés y español</option>
+              </select>
+            </label>
+            <label className="field" style={{ marginTop: 0 }}>
+              <input type="checkbox" checked={correct} onChange={(e) => setCorrect(e.target.checked)} />
+              <span>
+                Corregir errores del OCR con el modelo de <Link href="/settings">Ajustes</Link> (mejora el texto
+                del EPUB; el PDF conserva la capa de OCR original).
+              </span>
+            </label>
+          </div>
+        )}
 
         <div className="note">
           <IconInfo width={24} height={24} />
@@ -149,7 +188,7 @@ export default function UploadPage() {
         <div className="row">
           <span className="cta">
             <button className="btn" disabled={!file || !rights || busy} onClick={submit}>
-              <IconWand /> {busy ? "Subiendo…" : "Traducir libro"} {!busy && <IconArrowRight />}
+              <IconWand /> {busy ? "Subiendo…" : mode === "translate" ? "Traducir libro" : "Digitalizar libro"} {!busy && <IconArrowRight />}
             </button>
             <Rays className="rays" size={30} />
           </span>

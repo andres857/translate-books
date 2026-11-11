@@ -52,6 +52,7 @@ class Segment:
     ocr_confidence: float | None = None
     path: list[tuple[float, float]] | None = None  # texto curvo: polilínea de la línea base original
     small_chars: dict[str, tuple[float, float]] | None = None  # texto curvo: separadores (tamaño, desplazamiento)
+    natural_width: bool = False  # modo digitalizar: la fuente nueva usa su ancho natural (sin condensar al original)
 
 
 @dataclass

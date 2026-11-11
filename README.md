@@ -39,6 +39,48 @@ python -m app.worker                               # worker
 cd ../frontend && npm install && npm run dev       # interfaz
 ```
 
+## Modos de traducción y Ajustes
+
+En la web, **Ajustes** (`/settings`) permite elegir el modo y se aplica al siguiente libro, sin reiniciar:
+
+- **Claude · tu suscripción**: usa `claude -p` (Claude Code) con la sesión iniciada en el equipo donde corre el
+  worker; Sonnet por defecto, Opus opcional. No usa llave: se quitan `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`
+  del entorno. Cada llamada va aislada (sin herramientas, MCP, settings, memoria ni sesión). Si se agota el uso
+  de la suscripción, el trabajo falla con un aviso y se puede reanudar (la caché evita repetir lo ya traducido).
+  Solo funciona en desarrollo local: dentro de Docker no hay sesión de `claude`.
+- **DeepSeek (API)**: llave, modelo y razonamiento editables. Las llaves de DeepSeek empiezan por `sk-`.
+- **Prueba sin API**: traductor falso para revisar la maquetación.
+
+"Probar conexión" hace una traducción real mínima con el modo elegido. Los ajustes se guardan en
+`data/settings.json` (fuera de git, permisos 0600) y sobrescriben a `.env`; la llave nunca se devuelve completa.
+En la CLI: `python -m app.cli translate libro.pdf --provider claude|deepseek|fake`.
+
+## Solo digitalizar (PDF escaneado → PDF digital, sin traducir)
+
+Al subir un libro, **"Solo digitalizar"** convierte un PDF escaneado en un PDF con texto seleccionable y
+buscable, más su EPUB para Kindle, sin traducir:
+
+1. Análisis: detecta las páginas sin texto (las que ya tienen texto no se tocan).
+2. OCR con **OCRmyPDF/Tesseract** (`--skip-text --rotate-pages --deskew --clean --optimize 1`): capa de texto
+   invisible sobre la imagen original, que no cambia. Idioma: inglés, español o ambos.
+3. Corrección opcional con el modelo de Ajustes (Claude o DeepSeek): solo errores de reconocimiento
+   ("youre" → "you’re", "anastrology" → "an astrology"), sin traducir ni reescribir. Se rechaza si cambia
+   números, formato o longitud. Se usa en el EPUB; el PDF conserva la capa de OCR con sus posiciones exactas.
+4. EPUB fluido: las páginas escaneadas salen como texto; las figuras se recortan por zonas con tinta que no
+   son texto; las láminas sin texto, como imagen de página completa.
+
+Requisitos en el equipo del worker: `sudo apt install tesseract-ocr tesseract-ocr-spa ocrmypdf` (la imagen de
+Docker ya los incluye). Reporte: `reporte-digitalizacion.json`.
+
+## Descarga para Kindle (EPUB)
+
+Cada trabajo terminado ofrece, además del PDF, **"Para Kindle (EPUB)"**: un EPUB 3 fluido (texto ajustable)
+generado desde los segmentos traducidos, no desde el PDF. Títulos → índice navegable; párrafos partidos entre
+columnas o páginas se unen; se quitan encabezados, pies y números de página; figuras recortadas del PDF
+traducido; páginas muy visuales (infografías, escaneadas) como imagen de página completa seguida de su texto.
+Envíalo con Send to Kindle (web hasta 200 MB, correo hasta 50 MB): Amazon lo convierte; no hace falta MOBI/AZW.
+Para trabajos antiguos se genera al descargarlo, o con `python -m app.cli epub <job_id>`.
+
 ## Configuración (`.env`)
 
 | Variable | Descripción |
@@ -50,6 +92,7 @@ cd ../frontend && npm install && npm run dev       # interfaz
 | `TRANSLATION_CONCURRENCY` | Solicitudes simultáneas a la API (por defecto 10). |
 | `MIN_FONT_SCALE` / `MIN_FONT_SIZE_PT` | Límite de reducción del texto. Solo se pide revisión si el texto queda por debajo del tamaño mínimo legible o se superpone con otro bloque. |
 | `FAKE_TRANSLATOR` | `true` para probar sin API. |
+| `CLAUDE_BIN` | Ruta del programa `claude` si no está en el `PATH`. |
 
 ## Prueba con el libro de referencia
 

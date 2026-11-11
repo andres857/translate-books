@@ -6,7 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 RUN apt-get update && apt-get install -y --no-install-recommends \
         tesseract-ocr tesseract-ocr-eng tesseract-ocr-spa \
         ocrmypdf ghostscript \
-        fonts-noto-core fonts-noto-mono \
+        fonts-noto-core fonts-noto-mono fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

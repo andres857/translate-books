@@ -174,7 +174,7 @@ def place_rotated(page: pymupdf.Page, seg: Segment, fonts: FontResolver, min_sca
     upper = letters and sum(c.isupper() for c in letters) / len(letters) > 0.7
     size = st.size * (choice.scale_cap if upper else choice.scale_x)
     hscale = 1.0
-    if choice.source != "embedded":
+    if choice.source != "embedded" and not seg.natural_width:
         nat = layout.natural_width(seg.html, choice, size)
         if nat > 0:
             hscale = max(0.55, min(1.0, length / nat))
@@ -232,7 +232,7 @@ def place_segment(page: pymupdf.Page, seg: Segment, fonts: FontResolver, obstacl
 
     # escala horizontal calibrada: la fuente sustituta ocupa el mismo ancho que la original
     hscale = 1.0
-    if choice.source != "embedded":
+    if choice.source != "embedded" and not seg.natural_width:
         nat = layout.natural_width(seg.html, choice, size)
         orig_w = sum(r[2] - r[0] for r in seg.line_rects)
         if nat > 0 and orig_w > 0:

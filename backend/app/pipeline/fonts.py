@@ -42,6 +42,9 @@ NOTO_SERIF = {(False, False): "NotoSerif-Regular.ttf", (True, False): "NotoSerif
 WEIGHTS = (200, 300, 400, 500, 600, 700, 800, 900)
 # fuentes libres incluidas con el mismo diseño que la original (nombre normalizado -> archivo)
 SAME_DESIGN = {"lilitaone": "LilitaOne-Regular.ttf"}
+# serif con las métricas de Times (modo digitalizar: los libros escaneados suelen estar compuestos en Times)
+LIBERATION_SERIF = {(False, False): "LiberationSerif-Regular.ttf", (True, False): "LiberationSerif-Bold.ttf",
+                    (False, True): "LiberationSerif-Italic.ttf", (True, True): "LiberationSerif-BoldItalic.ttf"}
 
 
 def outline_coverage(buf: bytes) -> set[int]:
@@ -225,6 +228,10 @@ class FontResolver:
                 got = self._copy(fname)
                 if got:
                     return got
+        if norm.startswith("liberationserif"):
+            got = self._copy(LIBERATION_SERIF[(bold, italic)])
+            if got:
+                return got
         kind = classify_font(font_name, serif, mono)
         weight = font_weight(font_name, bold)
         w = min(WEIGHTS, key=lambda x: abs(x - weight))

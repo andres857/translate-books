@@ -14,26 +14,43 @@ from app.config import get_settings
 from app.db.cache import SqlCache
 from app.db.models import Document, GlossaryEntry, Job, Page, ProtectedTerm, Segment
 from app.db.session import SessionLocal
+from app.pipeline.digitize import DigitizeOptions, run_digitize
+from app.pipeline.epub import build_epub_for_job
 from app.pipeline.runner import Cancelled, PipelineOptions, run_pipeline
-from app.pipeline.translate import DeepSeekTranslator, FakeTranslator, FatalAPIError
+from app import runtime_settings
+from app.pipeline.translate import FatalAPIError
 
 log = logging.getLogger("worker")
 
 # peso de cada etapa en el progreso global (%)
 STAGE_WEIGHTS = {"analyze": (0, 4), "ocr": (4, 10), "protect": (10, 12), "translate": (12, 78),
                  "rebuild": (78, 93), "validate": (93, 100)}
+# modo digitalizar (OCR sin traducir); sin corrección con el modelo, la etapa "correct" no aparece
+DIGITIZE_WEIGHTS = {"analyze": (0, 2), "ocr": (2, 60), "correct": (60, 85), "compose": (85, 98),
+                    "validate": (98, 100)}
 
 
 def friendly_error(e: Exception) -> str:
     msg = str(e)
     if isinstance(e, FatalAPIError):
+        if "CLAUDE_CLI_MISSING" in msg:
+            return "No se encontró el programa 'claude' en este equipo. Instala Claude Code e inicia sesión."
+        if "CLAUDE_LOGIN" in msg:
+            return "Claude no tiene la sesión iniciada. Ejecuta 'claude' en una terminal e inicia sesión."
+        if "CLAUDE_QUOTA" in msg:
+            detail = msg.split(":", 1)[1].strip()
+            return "Se agotó el uso de tu suscripción de Claude por ahora. " + (detail[:200] if detail else "")
         if "DEEPSEEK_API_KEY" in msg:
-            return "El servicio de traducción no está configurado (falta la llave de DeepSeek)."
+            return "Falta la llave de DeepSeek. Agrégala en Ajustes."
         if "401" in msg:
             return "La llave de DeepSeek no es válida. Revisa la configuración."
         if "402" in msg:
             return "La cuenta de DeepSeek no tiene saldo suficiente."
         return "El servicio de traducción rechazó la solicitud. Revisa la configuración."
+    if "OCR_MISSING" in msg:
+        return "Falta OCRmyPDF/Tesseract en el equipo del servidor; no se puede digitalizar."
+    if "OCRmyPDF falló" in msg:
+        return "El OCR no pudo procesar este PDF. Revisa que no esté dañado e inténtalo de nuevo."
     if "contraseña" in msg:
         return msg
     return "Ocurrió un error inesperado al procesar el libro. Puedes intentar reanudar el proceso."
@@ -82,8 +99,12 @@ def process(job_id: int) -> None:
             last_check[1] = status in ("cancelled", "paused")
         return last_check[1]
 
+    options = dict(job.options or {})
+    digitize = options.get("mode") == "digitize"
+    weights = DIGITIZE_WEIGHTS if digitize else STAGE_WEIGHTS
+
     def progress(stage: str, done: int, total: int, page: int | None) -> None:
-        a, b = STAGE_WEIGHTS.get(stage, (0, 100))
+        a, b = weights.get(stage, (0, 100))
         job.stage = stage
         job.progress = round(a + (b - a) * (done / total if total else 1), 1)
         if page:
@@ -94,19 +115,20 @@ def process(job_id: int) -> None:
             s.commit()
 
     try:
-        if st.fake_translator:
-            translator = FakeTranslator()
-        else:
-            translator = DeepSeekTranslator(st.deepseek_api_key, st.deepseek_model, st.deepseek_base_url,
-                                            thinking=st.deepseek_thinking)
+        rs = runtime_settings.load()  # se lee en cada trabajo: cambiar el modo en Ajustes no exige reiniciar
+        if digitize:
+            process_digitize(s, job, rs, options, progress, should_stop)
+            return
+        translator = runtime_settings.make_translator(rs)
+        log.info("Trabajo %s: modo de traducción %s (%s)", job_id, rs.provider, translator.model)
         terms = {t.term: t.category for t in s.scalars(select(ProtectedTerm).where(
             (ProtectedTerm.document_id.is_(None)) | (ProtectedTerm.document_id == doc.id)))}
         glossary = {g.source: g.target for g in s.scalars(select(GlossaryEntry).where(
             (GlossaryEntry.document_id.is_(None)) | (GlossaryEntry.document_id == doc.id)))}
         opts = PipelineOptions(min_font_scale=st.min_font_scale, min_font_size_pt=st.min_font_size_pt,
-                               concurrency=st.translation_concurrency, batch_chars=st.translation_batch_chars,
+                               concurrency=rs.concurrency, batch_chars=st.translation_batch_chars,
                                batch_items=st.translation_batch_max_segments, fonts_dirs=st.fonts_dirs,
-                               detect_names=not st.fake_translator)
+                               detect_names=rs.provider != "fake")
         out_dir = st.outputs_dir / f"job_{job.id}"
         result = run_pipeline(Path(doc.path), out_dir, translator, SqlCache(SessionLocal()), terms, glossary,
                               opts, progress, should_stop)
@@ -116,6 +138,10 @@ def process(job_id: int) -> None:
         job.status, job.stage, job.progress = "done", "done", 100.0
         s.commit()
         log.info("Trabajo %s terminado: %s", job.id, result.output_pdf)
+        try:  # EPUB para Kindle; si falla, el PDF sigue disponible y el EPUB se genera al descargarlo
+            log.info("EPUB listo: %s", build_epub_for_job(s, job))
+        except Exception:  # noqa: BLE001
+            log.exception("No se pudo generar el EPUB del trabajo %s", job.id)
     except Cancelled:
         s.rollback()
         job = s.get(Job, job_id)
@@ -128,6 +154,32 @@ def process(job_id: int) -> None:
         s.commit()
     finally:
         s.close()
+
+
+def process_digitize(s, job: Job, rs, options: dict, progress, should_stop) -> None:
+    """Modo digitalizar: OCR sin traducir (+ corrección opcional con el modelo) y EPUB."""
+    st = get_settings()
+    translator = runtime_settings.make_translator(rs) if options.get("correct") else None
+    log.info("Trabajo %s: digitalizar (idioma %s, corrección %s)", job.id, options.get("ocr_lang"),
+             translator.model if translator else "no")
+    opts = DigitizeOptions(lang=options.get("ocr_lang", "en"), correct=bool(translator),
+                           concurrency=rs.concurrency, batch_chars=st.translation_batch_chars,
+                           batch_items=st.translation_batch_max_segments)
+    result = run_digitize(Path(job.document.path), st.outputs_dir / f"job_{job.id}", opts, translator,
+                          SqlCache(SessionLocal()), progress, should_stop, display_name=job.document.original_name,
+                          fonts_dirs=st.fonts_dirs)
+    save_results(s, job, result.pages)
+    job.document.title = result.title
+    options["ocr_pages"] = result.report["estadisticas"]["paginas_ocr_lista"]
+    job.options = options
+    job.output_path, job.report_path = str(result.output_pdf), str(result.report_path)
+    job.status, job.stage, job.progress = "done", "done", 100.0
+    s.commit()
+    log.info("Trabajo %s digitalizado: %s", job.id, result.output_pdf)
+    try:
+        log.info("EPUB listo: %s", build_epub_for_job(s, job))
+    except Exception:  # noqa: BLE001
+        log.exception("No se pudo generar el EPUB del trabajo %s", job.id)
 
 
 def recover_orphans() -> None:

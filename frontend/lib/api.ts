@@ -1,7 +1,12 @@
 export type StageState = "completed" | "in_progress" | "pending" | "error" | "cancelled" | "paused";
 
+export type JobMode = "translate" | "digitize";
+export type OcrLang = "en" | "es" | "auto";
+
 export interface JobStatus {
   id: number;
+  mode: JobMode;
+  ocr_lang: OcrLang | null;
   status: "queued" | "running" | "paused" | "cancelled" | "done" | "failed";
   stage: string;
   progress: number;
@@ -34,12 +39,19 @@ async function parse<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export async function uploadBook(file: File, rightsConfirmed: boolean): Promise<JobStatus> {
+export async function uploadBook(
+  file: File,
+  rightsConfirmed: boolean,
+  opts: { mode: JobMode; ocrLang: OcrLang; correct: boolean } = { mode: "translate", ocrLang: "en", correct: false },
+): Promise<JobStatus> {
   const form = new FormData();
   form.append("file", file);
   form.append("rights_confirmed", String(rightsConfirmed));
   form.append("source_lang", "en");
   form.append("target_lang", "es");
+  form.append("mode", opts.mode);
+  form.append("ocr_lang", opts.ocrLang);
+  form.append("correct_ocr", String(opts.correct));
   let res: Response;
   try {
     res = await fetch("/api/jobs", { method: "POST", body: form });
@@ -57,6 +69,42 @@ export async function jobAction(id: string | number, action: "cancel" | "resume"
   return parse(await fetch(`/api/jobs/${id}/${action}`, { method: "POST" }));
 }
 
-export async function getHealth(): Promise<{ translation_configured: boolean; max_upload_mb: number }> {
+export type Provider = "deepseek" | "claude" | "fake";
+
+export interface TranslationSettings {
+  provider: Provider;
+  deepseek_model: string;
+  deepseek_thinking: "disabled" | "low" | "high" | "max";
+  claude_model: "sonnet" | "opus";
+  claude_concurrency: number;
+  deepseek_concurrency: number;
+  deepseek_key_set: boolean;
+  deepseek_key_hint: string;
+  claude_available: boolean;
+}
+
+export type SettingsChanges = Partial<Omit<TranslationSettings, "deepseek_key_set" | "deepseek_key_hint" | "claude_available">> & {
+  deepseek_api_key?: string;
+};
+
+export async function getSettings(): Promise<TranslationSettings> {
+  return parse(await fetch("/api/settings", { cache: "no-store" }));
+}
+
+export async function saveSettings(changes: SettingsChanges): Promise<TranslationSettings> {
+  return parse(
+    await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(changes),
+    }),
+  );
+}
+
+export async function testSettings(): Promise<{ ok: boolean; provider: Provider; message: string }> {
+  return parse(await fetch("/api/settings/test", { method: "POST" }));
+}
+
+export async function getHealth(): Promise<{ translation_configured: boolean; provider: Provider; max_upload_mb: number }> {
   return parse(await fetch("/api/health", { cache: "no-store" }));
 }

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import threading
 from pathlib import Path
 
 import pymupdf
@@ -13,12 +14,16 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.db.models import Document, Job, Page
 from app.db.session import SessionLocal, get_db
+from app.pipeline.digitize import ocrmypdf_available
+from app.pipeline.epub import build_epub_for_job, epub_path_for
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
 STAGES = [("upload", "Carga"), ("analyze", "Análisis"), ("ocr", "OCR"), ("protect", "Protección"), ("translate", "Traducción"),
           ("rebuild", "Maquetación"), ("validate", "Validación"), ("done", "Descarga")]
 STAGE_INDEX = {k: i for i, (k, _) in enumerate(STAGES)}
+DIGITIZE_STAGES = [("upload", "Carga"), ("analyze", "Análisis"), ("ocr", "OCR"), ("correct", "Corrección"),
+                   ("compose", "Maquetación"), ("validate", "Validación"), ("done", "Descarga")]
 
 
 def _job_or_404(db: Session, job_id: int) -> Job:
@@ -29,9 +34,13 @@ def _job_or_404(db: Session, job_id: int) -> Job:
 
 
 def job_status(job: Job) -> dict:
-    current = STAGE_INDEX.get(job.stage, 0)
+    options = job.options or {}
+    digitize = options.get("mode") == "digitize"
+    stage_list = [st for st in DIGITIZE_STAGES if st[0] != "correct" or options.get("correct")] if digitize else STAGES
+    index = {k: i for i, (k, _) in enumerate(stage_list)}
+    current = index.get(job.stage, 0)
     stages = []
-    for i, (key, label) in enumerate(STAGES):
+    for i, (key, label) in enumerate(stage_list):
         if job.status == "done" or i < current:
             state = "completed"
         elif i == current:
@@ -43,6 +52,8 @@ def job_status(job: Job) -> dict:
     review = [{"page": p.number, "reasons": p.review_reasons} for p in job.pages if p.needs_review]
     return {
         "id": job.id,
+        "mode": "digitize" if digitize else "translate",
+        "ocr_lang": options.get("ocr_lang"),
         "status": job.status,
         "stage": job.stage,
         "progress": job.progress,
@@ -63,12 +74,22 @@ async def create_job(
     rights_confirmed: bool = Form(...),
     source_lang: str = Form("en"),
     target_lang: str = Form("es"),
+    mode: str = Form("translate"),
+    ocr_lang: str = Form("en"),
+    correct_ocr: bool = Form(False),
     db: Session = Depends(get_db),
 ):
     st = get_settings()
     if not rights_confirmed:
         raise HTTPException(400, "Debes confirmar que tienes derechos de uso sobre el libro.")
-    if (source_lang, target_lang) != ("en", "es"):
+    if mode not in ("translate", "digitize"):
+        raise HTTPException(400, "Modo no válido.")
+    if mode == "digitize":
+        if ocr_lang not in ("en", "es", "auto"):
+            raise HTTPException(400, "Idioma de OCR no válido.")
+        if not ocrmypdf_available():
+            raise HTTPException(400, "Este equipo no tiene OCRmyPDF/Tesseract instalados; no se puede digitalizar.")
+    elif (source_lang, target_lang) != ("en", "es"):
         raise HTTPException(400, "Por ahora solo se admite traducción de inglés a español.")
     data = await file.read(st.max_upload_mb * 1024 * 1024 + 1)
     if len(data) > st.max_upload_mb * 1024 * 1024:
@@ -93,7 +114,9 @@ async def create_job(
     doc = Document(original_name=file.filename or "libro.pdf", path=str(path), sha256=sha, page_count=len(pdf))
     db.add(doc)
     db.flush()
-    job = Job(document_id=doc.id, status="queued", stage="analyze", source_lang=source_lang, target_lang=target_lang)
+    options = {"mode": "digitize", "ocr_lang": ocr_lang, "correct": bool(correct_ocr)} if mode == "digitize" else {}
+    job = Job(document_id=doc.id, status="queued", stage="analyze", source_lang=source_lang, target_lang=target_lang,
+              options=options)
     db.add(job)
     db.commit()
     return job_status(job)
@@ -152,11 +175,31 @@ def resume_job(job_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{job_id}/download")
-def download(job_id: int, db: Session = Depends(get_db)):
+def download(job_id: int, format: str = "pdf", db: Session = Depends(get_db)):
     job = _job_or_404(db, job_id)
     if job.status != "done" or not job.output_path or not Path(job.output_path).exists():
         raise HTTPException(409, "El libro traducido todavía no está listo.")
+    if format == "epub":
+        path = _epub_for(db, job)
+        return FileResponse(path, media_type="application/epub+zip", filename=path.name)
+    if format != "pdf":
+        raise HTTPException(400, "Formato no disponible. Usa pdf o epub.")
     return FileResponse(job.output_path, media_type="application/pdf", filename=Path(job.output_path).name)
+
+
+_epub_locks: dict[int, threading.Lock] = {}
+
+
+def _epub_for(db: Session, job: Job) -> Path:
+    """EPUB para Kindle: se genera desde los segmentos guardados la primera vez (o si el PDF cambió)."""
+    path = epub_path_for(job.output_path)
+    with _epub_locks.setdefault(job.id, threading.Lock()):
+        if not path.exists() or path.stat().st_mtime < Path(job.output_path).stat().st_mtime:
+            try:
+                build_epub_for_job(db, job)
+            except Exception as e:  # noqa: BLE001
+                raise HTTPException(500, "No se pudo generar el EPUB de este libro.") from e
+    return path
 
 
 @router.get("/{job_id}/report")
@@ -164,7 +207,7 @@ def report(job_id: int, db: Session = Depends(get_db)):
     job = _job_or_404(db, job_id)
     if not job.report_path or not Path(job.report_path).exists():
         raise HTTPException(409, "El reporte todavía no está listo.")
-    return FileResponse(job.report_path, media_type="application/json", filename="reporte-traduccion.json")
+    return FileResponse(job.report_path, media_type="application/json", filename=Path(job.report_path).name)
 
 
 @router.get("/{job_id}/pages/{number}/preview")

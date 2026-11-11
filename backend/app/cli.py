@@ -1,7 +1,8 @@
 """CLI de desarrollo: traduce un PDF sin frontend ni API.
 
 Uso:
-  python -m app.cli translate libro.pdf --out salida/ [--pages 1-12,41] [--fake] [--protect "Kim Farley"]
+  python -m app.cli translate libro.pdf --out salida/ [--pages 1-12,41] [--provider deepseek|claude|fake] [--fake] [--protect "Kim Farley"]
+  python -m app.cli epub <job_id>                      # EPUB para Kindle de un trabajo terminado
   python -m app.cli analyze libro.pdf [--pages 1-5]     # muestra segmentos detectados sin traducir
 """
 from __future__ import annotations
@@ -59,13 +60,18 @@ def cmd_translate(args) -> None:
     from app.db.cache import SqlCache
     from app.db.session import SessionLocal
     from app.pipeline.runner import PipelineOptions, run_pipeline
-    from app.pipeline.translate import DeepSeekTranslator, FakeTranslator
 
     st = get_settings()
     migrate()
-    translator = FakeTranslator() if args.fake else DeepSeekTranslator(st.deepseek_api_key, st.deepseek_model,
-                                                                       st.deepseek_base_url,
-                                                                       thinking=st.deepseek_thinking)
+    from app import runtime_settings
+
+    rs = runtime_settings.load()
+    if args.fake:
+        rs.provider = "fake"
+    elif args.provider:
+        rs.provider = args.provider
+    translator = runtime_settings.make_translator(rs)
+    print(f"Modo de traducción: {rs.provider} ({translator.model})")
     session = SessionLocal()
     t0 = time.time()
     last = {"stage": None}
@@ -77,9 +83,9 @@ def cmd_translate(args) -> None:
         print(f"\r[{stage}] {done}/{total}" + (f" (página {page})" if page else "") + " " * 10, end="", flush=True)
 
     opts = PipelineOptions(min_font_scale=st.min_font_scale, min_font_size_pt=st.min_font_size_pt,
-                           concurrency=st.translation_concurrency, batch_chars=st.translation_batch_chars,
+                           concurrency=rs.concurrency, batch_chars=st.translation_batch_chars,
                            batch_items=st.translation_batch_max_segments, fonts_dirs=st.fonts_dirs,
-                           only_pages=parse_pages(args.pages), detect_names=not args.fake,
+                           only_pages=parse_pages(args.pages), detect_names=rs.provider != "fake",
                            visual_check=not args.no_visual)
     terms = {t: "NAME" for t in args.protect or []}
     result = run_pipeline(Path(args.pdf), Path(args.out), translator, SqlCache(session), terms, {}, opts, progress)
@@ -92,6 +98,12 @@ def cmd_translate(args) -> None:
     print(f"Páginas para revisión: {len(r['paginas_para_revision'])}")
     for p in r["paginas_para_revision"][:30]:
         print(f"  pág. {p['pagina']}: {'; '.join(p['motivos'])[:200]}")
+    if args.epub:
+        from app.pipeline.epub import build_epub, epub_path_for, pages_from_pipeline
+
+        epub = build_epub(result.output_pdf, pages_from_pipeline(result.pages), result.title_es or result.title,
+                          "", epub_path_for(result.output_pdf))
+        print(f"EPUB para Kindle: {epub} ({epub.stat().st_size / 1e6:.1f} MB)")
 
 
 def main(argv=None) -> None:
@@ -108,10 +120,29 @@ def main(argv=None) -> None:
     t.add_argument("--out", default="data/outputs/cli")
     t.add_argument("--pages", help="solo traducir estas páginas, p. ej. 1-10,41")
     t.add_argument("--fake", action="store_true", help="traductor falso sin API (pruebas de maquetación)")
+    t.add_argument("--provider", choices=["deepseek", "claude", "fake"],
+                   help="modo de traducción (por defecto, el elegido en Ajustes)")
     t.add_argument("--protect", action="append", help="término protegido adicional")
     t.add_argument("--no-visual", action="store_true", help="omitir comparación visual (más rápido)")
+    t.add_argument("--epub", action="store_true", help="generar también el EPUB para Kindle")
+    e = sub.add_parser("epub", help="generar el EPUB para Kindle de un trabajo ya terminado (sin traducir)")
+    e.add_argument("job_id", type=int)
     args = ap.parse_args(argv)
-    {"analyze": cmd_analyze, "translate": cmd_translate}[args.cmd](args)
+    {"analyze": cmd_analyze, "translate": cmd_translate, "epub": cmd_epub}[args.cmd](args)
+
+
+def cmd_epub(args) -> None:
+    from app.db.models import Job
+    from app.db.session import SessionLocal
+    from app.pipeline.epub import build_epub_for_job
+
+    migrate()
+    with SessionLocal() as s:
+        job = s.get(Job, args.job_id)
+        if job is None or job.status != "done" or not job.output_path:
+            sys.exit(f"El trabajo {args.job_id} no existe o no ha terminado.")
+        path = build_epub_for_job(s, job)
+    print(f"EPUB: {path} ({path.stat().st_size / 1e6:.1f} MB)")
 
 
 if __name__ == "__main__":

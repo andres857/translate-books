@@ -26,6 +26,14 @@ const STAGE_MESSAGE: Record<string, string> = {
   validate: "Estamos revisando que el libro traducido esté completo.",
 };
 
+const DIGITIZE_MESSAGE: Record<string, string> = {
+  analyze: "Estamos analizando qué páginas necesitan reconocimiento de texto.",
+  ocr: "Estamos reconociendo el texto de las páginas escaneadas (OCR).",
+  correct: "El modelo está corrigiendo errores de reconocimiento.",
+  compose: "Estamos escribiendo el texto con fuentes reales en cada página.",
+  validate: "Estamos revisando el PDF digital.",
+};
+
 function BadgeIcon({ state }: { state: StageState }) {
   if (state === "completed") return <IconCheck width={18} height={18} strokeWidth={3} />;
   if (state === "in_progress") return <IconHourglass width={18} height={18} />;
@@ -85,7 +93,7 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
     job.status === "cancelled" ? "El proceso fue cancelado. Puedes reanudarlo cuando quieras." :
     job.status === "failed" ? "El proceso se detuvo." :
     job.status === "paused" ? "El proceso está en pausa." :
-    STAGE_MESSAGE[job.stage] ?? "Procesando…";
+    (job.mode === "digitize" ? DIGITIZE_MESSAGE : STAGE_MESSAGE)[job.stage] ?? "Procesando…";
 
   return (
     <main>
@@ -94,7 +102,7 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
       <section className="job-hero">
         <IconWand className="wand" width={52} height={52} strokeWidth={2.2} />
         <div>
-          <h1>{done ? "¡Tu libro está listo!" : "Traduciendo tu libro"}</h1>
+          <h1>{done ? "¡Tu libro está listo!" : job.mode === "digitize" ? "Digitalizando tu libro" : "Traduciendo tu libro"}</h1>
           <p>{job.original_name.replace(/\.pdf$/i, "")}{job.page_count ? ` · ${job.page_count} páginas` : ""}</p>
         </div>
         <Planet className="planet" />
@@ -134,16 +142,22 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
         <section className="card">
           <div className="result">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={`/api/jobs/${job.id}/pages/1/preview?version=translated&dpi=60`} alt="Portada del libro traducido" />
+            <img src={`/api/jobs/${job.id}/pages/1/preview?version=translated&dpi=60`} alt="Portada del libro" />
             <div>
               <h2>Resultado</h2>
               <p><strong>Archivo:</strong> {job.output_name}</p>
               <p><strong>Páginas:</strong> {job.page_count}</p>
               <p><strong>Páginas para revisar:</strong> {job.review_pages.length}</p>
               <div className="row">
-                <a className="btn" href={`/api/jobs/${job.id}/download`}><IconDownload /> Descargar libro</a>
+                <a className="btn" href={`/api/jobs/${job.id}/download`}><IconDownload /> Descargar PDF</a>
+                <a className="btn" href={`/api/jobs/${job.id}/download?format=epub`}><IconDownload /> Para Kindle (EPUB)</a>
                 <a className="btn secondary" href={`/api/jobs/${job.id}/report`}>Descargar reporte</a>
               </div>
+              <p className="muted">
+                Para leerlo en tu Kindle, envía el EPUB con <a href="https://www.amazon.com/sendtokindle" target="_blank" rel="noreferrer">Send to Kindle</a>{" "}
+                (web, hasta 200 MB) o por correo a tu dirección @kindle.com (hasta 50 MB). Amazon lo convierte solo. La
+                primera descarga del EPUB puede tardar unos segundos.
+              </p>
             </div>
           </div>
           {job.review_pages.length > 0 && (
@@ -187,7 +201,7 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
           <Bulb className="bulb" />
           <span>
             Este proceso puede tardar unos minutos.<br />
-            Puedes cerrar esta ventana y volver más tarde a esta misma dirección: la traducción sigue en curso.
+            Puedes cerrar esta ventana y volver más tarde a esta misma dirección: el proceso sigue en curso.
           </span>
           <Sparkle className="deco" size={26} style={{ right: 34, top: 18 }} />
         </div>

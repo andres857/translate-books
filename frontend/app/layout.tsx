@@ -23,6 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </Link>
             <nav className="topnav">
               <Link href="/" className="pill"><IconHome width={20} height={20} /> Inicio</Link>
+              <Link href="/settings" className="pill">Ajustes</Link>
             </nav>
           </header>
           {children}
