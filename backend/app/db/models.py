@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import false as sa_false
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -96,6 +97,8 @@ class Segment(Base):
     status: Mapped[str] = mapped_column(String(16), default="pending")
     fit_scale: Mapped[float | None] = mapped_column(Float)
     issues: Mapped[list] = mapped_column(JSON, default=list)
+    # traducción corregida a mano desde el admin
+    edited: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false())
 
     page: Mapped[Page] = relationship(back_populates="segments")
 
@@ -126,3 +129,34 @@ class TranslationCache(Base):
     translation: Mapped[str] = mapped_column(Text)
     model: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PromptDraft(Base):
+    """Borrador de prompt del playground. Nunca cambia el prompt de producción."""
+    __tablename__ = "prompt_drafts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    task: Mapped[str] = mapped_column(String(16))  # translate | correct
+    name: Mapped[str] = mapped_column(String(120))
+    text: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class PlaygroundRun(Base):
+    """Evaluación de variantes (método, modelo, razonamiento, prompt) sobre un capítulo de un libro procesado."""
+    __tablename__ = "playground_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"), index=True)
+    task: Mapped[str] = mapped_column(String(16))  # translate | correct
+    pages: Mapped[str] = mapped_column(String(32))  # "12-18"
+    chapter: Mapped[str | None] = mapped_column(Text)
+    variants: Mapped[list] = mapped_column(JSON, default=list)  # con el texto del prompt copiado al lanzar
+    status: Mapped[str] = mapped_column(String(16), default="queued", index=True)
+    progress: Mapped[float] = mapped_column(Float, default=0.0)
+    current_variant: Mapped[int | None] = mapped_column(Integer)
+    results: Mapped[list] = mapped_column(JSON, default=list)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)

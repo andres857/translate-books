@@ -127,6 +127,7 @@ def main(argv=None) -> None:
     t.add_argument("--epub", action="store_true", help="generar también el EPUB para Kindle")
     e = sub.add_parser("epub", help="generar el EPUB para Kindle de un trabajo ya terminado (sin traducir)")
     e.add_argument("job_id", type=int)
+    e.add_argument("--azw3", action="store_true", help="convertirlo también a AZW3 (requiere Calibre)")
     args = ap.parse_args(argv)
     {"analyze": cmd_analyze, "translate": cmd_translate, "epub": cmd_epub}[args.cmd](args)
 
@@ -142,7 +143,15 @@ def cmd_epub(args) -> None:
         if job is None or job.status != "done" or not job.output_path:
             sys.exit(f"El trabajo {args.job_id} no existe o no ha terminado.")
         path = build_epub_for_job(s, job)
+        output_pdf = job.output_path
     print(f"EPUB: {path} ({path.stat().st_size / 1e6:.1f} MB)")
+    if args.azw3:
+        from app.pipeline.azw3 import azw3_path_for, build_azw3, ebook_convert_available
+
+        if not ebook_convert_available():
+            sys.exit("Falta Calibre (ebook-convert): sudo apt install calibre")
+        azw3 = build_azw3(path, azw3_path_for(output_pdf))
+        print(f"AZW3: {azw3} ({azw3.stat().st_size / 1e6:.1f} MB)")
 
 
 if __name__ == "__main__":

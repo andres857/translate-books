@@ -1,4 +1,4 @@
-"""Ajustes editables desde la web (modo de traducción, llave de DeepSeek, modelos).
+"""Ajustes editables desde la web (modo de traducción, llave de DeepSeek, token de Claude, modelos).
 
 Los valores de `.env` (app.config) son el punto de partida; `data/settings.json` los sobrescribe. El archivo
 está fuera del repositorio (data/ en .gitignore), se escribe de forma atómica y con permisos 0600. La llave
@@ -19,6 +19,8 @@ from app.config import get_settings
 PROVIDERS = ("deepseek", "claude", "fake")
 CLAUDE_MODELS = ("sonnet", "opus")
 THINKING_LEVELS = ("disabled", "low", "high", "max")
+CLAUDE_TOKEN_PREFIX = "sk-ant-oat"
+SECRETS = ("deepseek_api_key", "claude_oauth_token")
 _lock = threading.Lock()
 
 
@@ -31,14 +33,28 @@ class RuntimeSettings:
     claude_model: str = "sonnet"
     claude_concurrency: int = 4
     deepseek_concurrency: int = 10
+    # token de `claude setup-token` (suscripción dentro de contenedores); secreto como la llave de DeepSeek
+    claude_oauth_token: str = ""
 
     def public(self) -> dict:
         data = asdict(self)
         key = data.pop("deepseek_api_key")
         data["deepseek_key_set"] = bool(key)
         data["deepseek_key_hint"] = key[-4:] if len(key) >= 8 else ""
+        token = data.pop("claude_oauth_token")
+        data["claude_token_set"] = bool(token)
+        data["claude_token_hint"] = token[-4:] if len(token) >= 8 else ""
         data["claude_available"] = shutil.which(claude_binary()) is not None
+        data["claude_auth"] = self.claude_auth()
         return data
+
+    def claude_auth(self) -> str:
+        """token = token de setup-token (contenedor) · session = login de Claude Code en este equipo · none."""
+        if self.claude_oauth_token:
+            return "token"
+        if claude_session_path().exists():
+            return "session"
+        return "none"
 
     @property
     def concurrency(self) -> int:
@@ -48,12 +64,16 @@ class RuntimeSettings:
         if self.provider == "deepseek":
             return bool(self.deepseek_api_key)
         if self.provider == "claude":
-            return shutil.which(claude_binary()) is not None
+            return shutil.which(claude_binary()) is not None and self.claude_auth() != "none"
         return True
 
 
 def claude_binary() -> str:
     return os.environ.get("CLAUDE_BIN", "claude")
+
+
+def claude_session_path() -> Path:
+    return Path.home() / ".claude" / ".credentials.json"
 
 
 def settings_path() -> Path:
@@ -65,7 +85,8 @@ def defaults() -> RuntimeSettings:
     return RuntimeSettings(provider="fake" if st.fake_translator else "deepseek",
                            deepseek_api_key=st.deepseek_api_key, deepseek_model=st.deepseek_model,
                            deepseek_thinking=st.deepseek_thinking,
-                           deepseek_concurrency=st.translation_concurrency)
+                           deepseek_concurrency=st.translation_concurrency,
+                           claude_oauth_token=st.claude_code_oauth_token)
 
 
 def load() -> RuntimeSettings:
@@ -93,6 +114,8 @@ def validate(rs: RuntimeSettings) -> None:
         value = getattr(rs, name)
         if not isinstance(value, int) or not 1 <= value <= 32:
             raise ValueError("La concurrencia debe estar entre 1 y 32")
+    if rs.claude_oauth_token and not rs.claude_oauth_token.startswith(CLAUDE_TOKEN_PREFIX):
+        raise ValueError("El token de Claude no es válido: debe ser el que imprime 'claude setup-token' (sk-ant-oat…)")
 
 
 def update(changes: dict) -> RuntimeSettings:
@@ -103,7 +126,7 @@ def update(changes: dict) -> RuntimeSettings:
         for key, value in changes.items():
             if key not in names or value is None:
                 continue
-            if key == "deepseek_api_key":
+            if key in SECRETS:
                 value = str(value).strip()
                 if not value:
                     continue
@@ -123,18 +146,19 @@ def update(changes: dict) -> RuntimeSettings:
         return current
 
 
-def make_translator(rs: RuntimeSettings | None = None):
-    """Crea el traductor del modo elegido."""
+def make_translator(rs: RuntimeSettings | None = None, prompts: dict | None = None, effort: str | None = None):
+    """Crea el traductor del modo elegido. prompts/effort: variantes del playground (producción no los usa)."""
     from app.pipeline.translate import ClaudeCLITranslator, DeepSeekTranslator, FakeTranslator
 
     rs = rs or load()
     if rs.provider == "fake":
         return FakeTranslator()
     if rs.provider == "claude":
-        return ClaudeCLITranslator(model=rs.claude_model, binary=claude_binary())
+        return ClaudeCLITranslator(model=rs.claude_model, binary=claude_binary(),
+                                   oauth_token=rs.claude_oauth_token, prompts=prompts, effort=effort)
     st = get_settings()
     return DeepSeekTranslator(rs.deepseek_api_key, rs.deepseek_model, st.deepseek_base_url,
-                              thinking=rs.deepseek_thinking)
+                              thinking=rs.deepseek_thinking, prompts=prompts)
 
 
 def test_connection(rs: RuntimeSettings | None = None) -> str:

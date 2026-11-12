@@ -64,3 +64,44 @@ def test_settings_api(store):
     r = c.post("/api/settings/test").json()
     assert r["ok"] is True and r["provider"] == "fake"
     assert c.get("/api/health").json()["provider"] == "fake"
+
+
+TOKEN = "sk-ant-oat01-abcdefghijklmnop-wxyz"
+
+
+def test_claude_token_secret_and_kept(store):
+    data = rsmod.update({"provider": "claude", "claude_oauth_token": TOKEN}).public()
+    assert TOKEN not in json.dumps(data)
+    assert data["claude_token_set"] is True and data["claude_token_hint"] == "wxyz"
+    rsmod.update({"claude_oauth_token": ""})  # vacío = conservar
+    assert rsmod.load().claude_oauth_token == TOKEN
+    t = rsmod.make_translator(rsmod.load())
+    assert isinstance(t, ClaudeCLITranslator) and t.oauth_token == TOKEN
+
+
+def test_claude_token_prefix_validated(store):
+    with pytest.raises(ValueError):
+        rsmod.update({"claude_oauth_token": "sk-deepseek-123456"})
+    assert not store.exists()
+
+
+def test_claude_auth_modes(store, tmp_path, monkeypatch):
+    creds = tmp_path / "credentials.json"
+    monkeypatch.setattr(rsmod, "claude_session_path", lambda: creds)
+    assert rsmod.RuntimeSettings(provider="claude").claude_auth() == "none"
+    creds.write_text("{}")
+    assert rsmod.RuntimeSettings(provider="claude").claude_auth() == "session"
+    assert rsmod.RuntimeSettings(provider="claude", claude_oauth_token=TOKEN).claude_auth() == "token"
+
+
+def test_settings_api_token(store):
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    c = TestClient(app)
+    r = c.put("/api/settings", json={"provider": "claude", "claude_oauth_token": TOKEN})
+    assert r.status_code == 200 and TOKEN not in r.text
+    body = c.get("/api/settings").json()
+    assert body["claude_token_set"] is True and body["claude_auth"] == "token" and TOKEN not in json.dumps(body)
+    assert c.put("/api/settings", json={"claude_oauth_token": "bad"}).status_code == 400

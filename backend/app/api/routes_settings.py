@@ -1,4 +1,4 @@
-"""Ajustes de traducción editables desde la web. La llave de DeepSeek nunca se devuelve completa."""
+"""Ajustes de traducción editables desde la web. La llave de DeepSeek y el token de Claude nunca se devuelven."""
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -16,6 +16,7 @@ class SettingsIn(BaseModel):
     claude_model: str | None = None
     claude_concurrency: int | None = None
     deepseek_concurrency: int | None = None
+    claude_oauth_token: str | None = None
 
 
 @router.get("/settings")

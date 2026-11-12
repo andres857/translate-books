@@ -13,9 +13,20 @@ pipeline: análisis → protección → traducción (DeepSeek) → reconstrucci�
 ```bash
 git clone https://github.com/lore2203/traductor_libros.git
 cd traductor_libros
-cp .env.example .env        # y pon tu DEEPSEEK_API_KEY (en Windows: copy .env.example .env)
-docker compose up --build
+cp .env.example .env        # en Windows: copy .env.example .env
+mkdir data                  # créala tú: si la crea Docker queda a nombre de root
+docker compose up --build -d
 ```
+
+En `.env` pon al menos una credencial (o pégala después en la web, en **Administración › Configuración**):
+
+- **API**: `DEEPSEEK_API_KEY=sk-…`
+- **Suscripción de Claude** (Pro/Max): ejecuta `claude setup-token` en tu equipo y copia el token en
+  `CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat…`. La imagen incluye la CLI de Claude Code, así que la suscripción funciona
+  dentro de los contenedores sin montar `~/.claude`.
+
+Si el puerto 3000 u 8000 está ocupado, cambia `WEB_PORT` / `API_PORT` en `.env`. `APP_UID`/`APP_GID` deben ser los
+de tu usuario (`id -u`, `id -g`) para que los archivos de `data/` queden a tu nombre.
 
 Requisitos: Git y Docker Desktop. El repositorio es privado: al clonar, inicia sesión con tu cuenta de
 GitHub. El archivo `.env` (con la llave) no se sube a GitHub, así que hay que crearlo en cada equipo.
@@ -34,25 +45,28 @@ python -m pytest                                   # pruebas
 python -m app.cli analyze libro.pdf --pages 1-5    # ver segmentos detectados
 python -m app.cli translate libro.pdf --pages 1-12 --out ../data/outputs/cli   # traducir (usa caché)
 python -m app.cli translate libro.pdf --fake       # sin API, solo maquetación
+alembic upgrade head                               # esquema de la base de datos (repetir tras actualizar el código)
 uvicorn app.main:app --reload                      # API
 python -m app.worker                               # worker
 cd ../frontend && npm install && npm run dev       # interfaz
 ```
 
-## Modos de traducción y Ajustes
+## Métodos de traducción (Administración › Configuración)
 
-En la web, **Ajustes** (`/settings`) permite elegir el modo y se aplica al siguiente libro, sin reiniciar:
+En la web, **Administración › Configuración** (`/admin/settings`; `/settings` redirige allí) permite elegir el método y
+se aplica al siguiente libro, sin reiniciar:
 
-- **Claude · tu suscripción**: usa `claude -p` (Claude Code) con la sesión iniciada en el equipo donde corre el
-  worker; Sonnet por defecto, Opus opcional. No usa llave: se quitan `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`
-  del entorno. Cada llamada va aislada (sin herramientas, MCP, settings, memoria ni sesión). Si se agota el uso
-  de la suscripción, el trabajo falla con un aviso y se puede reanudar (la caché evita repetir lo ya traducido).
-  Solo funciona en desarrollo local: dentro de Docker no hay sesión de `claude`.
+- **Suscripción de Claude**: usa `claude -p` (Claude Code); Sonnet por defecto, Opus opcional. Se autentica con el
+  token de `claude setup-token` (Docker o cualquier equipo) o, en desarrollo local, con la sesión ya iniciada. Nunca
+  usa llave de API: se quitan `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN` del entorno y el token viaja solo por
+  variable de entorno. Cada llamada va aislada (sin herramientas, MCP, settings, memoria ni sesión).
+  **Límites**: consume las ventanas de uso de 5 horas y semanal de tu plan y la concurrencia es menor (4); si se
+  agota, el trabajo se detiene con un aviso y se puede reanudar (la caché evita repetir lo ya traducido).
 - **DeepSeek (API)**: llave, modelo y razonamiento editables. Las llaves de DeepSeek empiezan por `sk-`.
-- **Prueba sin API**: traductor falso para revisar la maquetación.
+- **Prueba sin API** (botón secundario): traductor falso para revisar la maquetación.
 
 "Probar conexión" hace una traducción real mínima con el modo elegido. Los ajustes se guardan en
-`data/settings.json` (fuera de git, permisos 0600) y sobrescriben a `.env`; la llave nunca se devuelve completa.
+`data/settings.json` (fuera de git, permisos 0600) y sobrescriben a `.env`; la llave y el token nunca se devuelven.
 En la CLI: `python -m app.cli translate libro.pdf --provider claude|deepseek|fake`.
 
 ## Solo digitalizar (PDF escaneado → PDF digital, sin traducir)
@@ -63,7 +77,7 @@ buscable, más su EPUB para Kindle, sin traducir:
 1. Análisis: detecta las páginas sin texto (las que ya tienen texto no se tocan).
 2. OCR con **OCRmyPDF/Tesseract** (`--skip-text --rotate-pages --deskew --clean --optimize 1`): capa de texto
    invisible sobre la imagen original, que no cambia. Idioma: inglés, español o ambos.
-3. Corrección opcional con el modelo de Ajustes (Claude o DeepSeek): solo errores de reconocimiento
+3. Corrección opcional con el método de Administración › Configuración (Claude o DeepSeek): solo errores de reconocimiento
    ("youre" → "you’re", "anastrology" → "an astrology"), sin traducir ni reescribir. Se rechaza si cambia
    números, formato o longitud. Se usa en el EPUB; el PDF conserva la capa de OCR con sus posiciones exactas.
 4. EPUB fluido: las páginas escaneadas salen como texto; las figuras se recortan por zonas con tinta que no
@@ -72,7 +86,7 @@ buscable, más su EPUB para Kindle, sin traducir:
 Requisitos en el equipo del worker: `sudo apt install tesseract-ocr tesseract-ocr-spa ocrmypdf` (la imagen de
 Docker ya los incluye). Reporte: `reporte-digitalizacion.json`.
 
-## Descarga para Kindle (EPUB)
+## Descarga para Kindle (EPUB y AZW3)
 
 Cada trabajo terminado ofrece, además del PDF, **"Para Kindle (EPUB)"**: un EPUB 3 fluido (texto ajustable)
 generado desde los segmentos traducidos, no desde el PDF. Títulos → índice navegable; párrafos partidos entre
@@ -80,6 +94,28 @@ columnas o páginas se unen; se quitan encabezados, pies y números de página; 
 traducido; páginas muy visuales (infografías, escaneadas) como imagen de página completa seguida de su texto.
 Envíalo con Send to Kindle (web hasta 200 MB, correo hasta 50 MB): Amazon lo convierte; no hace falta MOBI/AZW.
 Para trabajos antiguos se genera al descargarlo, o con `python -m app.cli epub <job_id>`.
+
+**AZW3**: "Kindle (AZW3)" convierte ese mismo EPUB con `ebook-convert` de Calibre, así que conserva índice,
+figuras y texto fluido; sirve para copiarlo al Kindle por USB. Requiere Calibre en el equipo del worker/API
+(`sudo apt install calibre`; la imagen de Docker ya lo incluye, unos 400 MB más). Sin Calibre el botón se
+desactiva y el resto de descargas sigue igual. CLI: `python -m app.cli epub <job_id> --azw3`.
+
+## Administración (`/admin`)
+
+Sin inicio de sesión (pensado para uso local). Lista los libros y, por libro:
+
+- **Resumen**: páginas correctas y para revisar, validaciones del libro y tabla de páginas con sus motivos.
+- **Comparar**: original y resultado lado a lado, con zoom y desplazamiento conjunto, y el texto por bloque
+  (original | traducción). El original nunca se sobrescribe: vive en `data/uploads/<sha>/original.pdf`.
+- **Editar y recomponer**: se corrige la traducción de un bloque (admite `<b>` e `<i>`), se guarda y
+  "Recomponer página" vuelve a maquetar solo esa página en el PDF; las demás no cambian. Lo corregido a mano
+  no se reescribe ni se acorta con el modelo: si no cabe, la página queda para revisión. EPUB y AZW3 se
+  regeneran en la siguiente descarga. Mientras se recompone (segundos) el libro no se puede descargar.
+- **Glosario y términos**: traducciones fijas y términos protegidos, globales o solo del libro; se aplican en
+  la siguiente traducción.
+
+Los estilos de toda la interfaz salen de `handoff/tokens.css` (copiado a `frontend/app/tokens.css`);
+`node handoff/check.mjs frontend/app` comprueba que no haya valores escritos a mano.
 
 ## Configuración (`.env`)
 
@@ -92,7 +128,11 @@ Para trabajos antiguos se genera al descargarlo, o con `python -m app.cli epub <
 | `TRANSLATION_CONCURRENCY` | Solicitudes simultáneas a la API (por defecto 10). |
 | `MIN_FONT_SCALE` / `MIN_FONT_SIZE_PT` | Límite de reducción del texto. Solo se pide revisión si el texto queda por debajo del tamaño mínimo legible o se superpone con otro bloque. |
 | `FAKE_TRANSLATOR` | `true` para probar sin API. |
+| `CLAUDE_CODE_OAUTH_TOKEN` | Token de `claude setup-token` para el método suscripción (también editable en la web). |
+| `WEB_PORT` / `API_PORT` | Puertos publicados por `docker compose` (3000 / 8000). |
+| `APP_UID` / `APP_GID` | Usuario con el que corren los contenedores (dueño de `data/`). |
 | `CLAUDE_BIN` | Ruta del programa `claude` si no está en el `PATH`. |
+| `EBOOK_CONVERT_BIN` | Ruta de `ebook-convert` (Calibre) si no está en el `PATH`. |
 
 ## Prueba con el libro de referencia
 

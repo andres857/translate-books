@@ -1,0 +1,120 @@
+"""Administración: resumen de páginas, bloques bilingües, corrección manual y recomposición."""
+from __future__ import annotations
+
+import json
+from collections import Counter
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.api.routes_jobs import _job_or_404, job_status
+from app.db.models import Job, Page, Segment
+from app.db.session import get_db
+from app.pipeline.translate import check_translation, plain, sanitize_html
+
+router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+
+def _report(job: Job) -> dict:
+    if job.report_path and Path(job.report_path).exists():
+        try:
+            return json.loads(Path(job.report_path).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+    return {}
+
+
+def _segment(s: Segment) -> dict:
+    return {"key": s.seg_key, "bbox": s.bbox, "block_type": s.block_type, "action": s.action,
+            "source_html": s.source_html or s.source_text, "translation": s.translation,
+            "issues": s.issues or [], "fit_scale": s.fit_scale, "ocr_confidence": s.ocr_confidence,
+            "edited": bool(s.edited)}
+
+
+@router.get("/jobs/{job_id}/summary")
+def summary(job_id: int, db: Session = Depends(get_db)):
+    job = _job_or_404(db, job_id)
+    report = _report(job)
+    pages = []
+    for p in db.scalars(select(Page).where(Page.job_id == job_id).order_by(Page.number)):
+        scales = [s.fit_scale for s in p.segments if s.fit_scale]
+        pages.append({"number": p.number, "kind": p.kind, "needs_review": p.needs_review,
+                      "reasons": p.review_reasons or [], "segments": len(p.segments),
+                      "translated": sum(1 for s in p.segments if s.action == "translate" and s.translation),
+                      "edited": sum(1 for s in p.segments if s.edited),
+                      "min_scale": round(min(scales), 2) if scales else None})
+    review = sum(1 for p in pages if p["needs_review"])
+    return {
+        "job": job_status(job),
+        "totals": {"pages": len(pages) or job.document.page_count, "ok": len(pages) - review, "review": review,
+                   "by_kind": dict(Counter(p["kind"] for p in pages)),
+                   "segments": sum(p["segments"] for p in pages), "edited": sum(p["edited"] for p in pages)},
+        "checks": report.get("validaciones", {}),
+        "stats": report.get("estadisticas", {}),
+        "warnings": report.get("advertencias", []),
+        "errors": report.get("errores", []),
+        "pages": pages,
+    }
+
+
+def _page_or_404(db: Session, job_id: int, number: int) -> Page:
+    page = db.scalars(select(Page).where(Page.job_id == job_id, Page.number == number)).first()
+    if page is None:
+        raise HTTPException(404, "Esa página no existe o el libro todavía no se ha procesado.")
+    return page
+
+
+@router.get("/jobs/{job_id}/pages/{number}/segments")
+def page_segments(job_id: int, number: int, db: Session = Depends(get_db)):
+    _job_or_404(db, job_id)
+    page = _page_or_404(db, job_id, number)
+    return {"number": page.number, "width": page.width, "height": page.height, "kind": page.kind,
+            "needs_review": page.needs_review, "reasons": page.review_reasons or [],
+            "segments": [_segment(s) for s in sorted(page.segments, key=lambda x: (x.bbox[1], x.bbox[0]))]}
+
+
+class SegmentEdit(BaseModel):
+    translation: str = Field(min_length=1, max_length=20000)
+
+
+@router.put("/jobs/{job_id}/segments/{seg_key}")
+def edit_segment(job_id: int, seg_key: str, body: SegmentEdit, db: Session = Depends(get_db)):
+    """Guarda una traducción corregida a mano. No recompone: eso se pide aparte, por página."""
+    job = _job_or_404(db, job_id)
+    if (job.options or {}).get("mode") == "digitize":
+        raise HTTPException(400, "Los libros digitalizados no tienen traducción que corregir.")
+    seg = db.scalars(select(Segment).join(Page).where(Page.job_id == job_id, Segment.seg_key == seg_key)).first()
+    if seg is None:
+        raise HTTPException(404, "No encontramos ese bloque.")
+    if seg.action not in ("translate", "review"):
+        raise HTTPException(400, "Este bloque se conserva tal cual; no tiene traducción editable.")
+    text = sanitize_html(body.translation.strip())
+    if not plain(text).strip():
+        raise HTTPException(400, "La traducción no puede quedar vacía.")
+    issues = check_translation(seg.source_html or seg.source_text, text)
+    tr_plain = plain(text)
+    issues += [f"falta el término protegido «{v}»" for v in (seg.placeholders or {}).values() if v not in tr_plain]
+    seg.translation, seg.edited, seg.issues, seg.action = text, True, issues, "translate"
+    db.commit()
+    return _segment(seg)
+
+
+@router.post("/jobs/{job_id}/pages/{number}/recompose")
+def recompose(job_id: int, number: int, db: Session = Depends(get_db)):
+    """Encola la recomposición de una página; la ejecuta el worker."""
+    job = _job_or_404(db, job_id)
+    options = dict(job.options or {})
+    if options.get("mode") == "digitize":
+        raise HTTPException(400, "Los libros digitalizados no se recomponen.")
+    if job.status != "done" or not job.output_path or not Path(job.output_path).exists():
+        raise HTTPException(409, "El libro tiene que estar terminado para recomponer una página.")
+    _page_or_404(db, job_id, number)
+    options["recompose"] = sorted(set(options.get("recompose") or []) | {number})
+    options.pop("recompose_error", None)
+    job.options = options
+    job.status, job.stage, job.progress, job.error = "queued", "analyze", 0.0, None
+    db.commit()
+    return job_status(job)

@@ -2,11 +2,8 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { getJob, jobAction, type JobStatus, type StageState } from "@/lib/api";
-import {
-  Bulb, IconArrowLeft, IconCheck, IconDownload, IconHourglass, IconLayers, IconRefresh, IconWand, IconWarn, IconX,
-  Planet, Robot, Sparkle,
-} from "../../components/art";
+import { getHealth, getJob, jobAction, type JobStatus, type StageState } from "@/lib/api";
+import { IconArrowLeft, IconCheck, IconDownload, IconHourglass, IconRefresh, IconWarn, IconX } from "../../components/art";
 
 const STATE_TEXT: Record<StageState, string> = {
   completed: "Completado",
@@ -35,16 +32,21 @@ const DIGITIZE_MESSAGE: Record<string, string> = {
 };
 
 function BadgeIcon({ state }: { state: StageState }) {
-  if (state === "completed") return <IconCheck width={18} height={18} strokeWidth={3} />;
-  if (state === "in_progress") return <IconHourglass width={18} height={18} />;
-  if (state === "error" || state === "cancelled") return <IconX width={16} height={16} strokeWidth={3} />;
-  return <span aria-hidden>•</span>;
+  if (state === "completed") return <IconCheck />;
+  if (state === "in_progress") return <IconHourglass />;
+  if (state === "error" || state === "cancelled") return <IconX />;
+  return null;
 }
 
 export default function JobPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [job, setJob] = useState<JobStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [azw3, setAzw3] = useState(true);
+
+  useEffect(() => {
+    getHealth().then((h) => setAzw3(h.azw3_available)).catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -80,7 +82,7 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
   if (!job) {
     return (
       <main>
-        <section className="card"><p style={{ margin: 0 }}>{error ?? "Cargando…"}</p></section>
+        <section className="card"><p>{error ?? "Cargando…"}</p></section>
       </main>
     );
   }
@@ -89,6 +91,7 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
   const active = job.status === "queued" || job.status === "running";
   const stopped = job.status === "cancelled" || job.status === "failed";
   const message =
+    job.recomposing ? "Estamos recomponiendo una página corregida." :
     job.status === "queued" ? "Tu libro está en la cola y comenzará en breve." :
     job.status === "cancelled" ? "El proceso fue cancelado. Puedes reanudarlo cuando quieras." :
     job.status === "failed" ? "El proceso se detuvo." :
@@ -97,44 +100,42 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
 
   return (
     <main>
-      <Link href="/" className="back"><IconArrowLeft width={18} height={18} /> <u>Subir otro libro</u></Link>
+      <Link href="/" className="back"><IconArrowLeft width={16} height={16} /> Subir otro libro</Link>
 
-      <section className="job-hero">
-        <IconWand className="wand" width={52} height={52} strokeWidth={2.2} />
+      <div className="page-head">
         <div>
-          <h1>{done ? "¡Tu libro está listo!" : job.mode === "digitize" ? "Digitalizando tu libro" : "Traduciendo tu libro"}</h1>
+          <h1>{done ? "Tu libro está listo" : job.mode === "digitize" ? "Digitalizando tu libro" : "Traduciendo tu libro"}</h1>
           <p>{job.original_name.replace(/\.pdf$/i, "")}{job.page_count ? ` · ${job.page_count} páginas` : ""}</p>
         </div>
-        <Planet className="planet" />
-        <Sparkle className="deco" size={18} color="#2e9b70" style={{ left: "62%", top: 0 }} />
-        <Sparkle className="deco" size={14} color="#2e9b70" style={{ left: "70%", top: 40 }} />
-      </section>
+        <Link className="btn secondary" href={`/admin/jobs/${job.id}`}>Ver en administración</Link>
+      </div>
 
       {error && <div className="alert error" role="alert"><IconWarn /><span>{error}</span></div>}
       {job.error && <div className="alert error" role="alert"><IconWarn /><span>{job.error}</span></div>}
 
       {!done && (
-        <section className="card progress-card" aria-live="polite">
-          <Robot className="robot" />
-          <div>
-            <h2>{message}</h2>
-            <div className={`progress ${active ? "" : "idle"}`} role="progressbar" aria-valuenow={job.progress}
-              aria-valuemin={0} aria-valuemax={100}>
-              <div style={{ width: `${Math.max(job.progress, active ? 3 : 0)}%` }} />
-            </div>
-            <p className="pct">
-              {Math.round(job.progress)}%
-              {job.current_page ? <small>página {job.current_page} de {job.page_count}</small> : null}
-            </p>
-            <div className="row" style={{ marginTop: 14 }}>
-              {active && (
-                <button className="btn secondary" onClick={() => act("cancel")}><IconX width={18} height={18} /> Cancelar</button>
-              )}
-              {stopped && (
-                <button className="btn" onClick={() => act("resume")}><IconRefresh width={20} height={20} /> Reanudar</button>
-              )}
-            </div>
+        <section className="card" aria-live="polite">
+          <h2>{message}</h2>
+          <div className={`progress ${active ? "" : "idle"}`} role="progressbar" aria-valuenow={job.progress}
+            aria-valuemin={0} aria-valuemax={100} aria-label="Avance del proceso">
+            <div style={{ width: `${Math.max(job.progress, active ? 3 : 0)}%` }} />
           </div>
+          <p className="pct">
+            {Math.round(job.progress)}%
+            {job.current_page ? <small>página {job.current_page} de {job.page_count}</small> : null}
+          </p>
+          <div className="row">
+            {active && (
+              <button className="btn secondary" onClick={() => act("cancel")}><IconX /> Cancelar</button>
+            )}
+            {stopped && (
+              <button className="btn" onClick={() => act("resume")}><IconRefresh /> Reanudar</button>
+            )}
+          </div>
+          <p className="muted">
+            Puede tardar unos minutos. Puedes cerrar esta ventana y volver más tarde a esta misma dirección: el
+            proceso sigue en curso.
+          </p>
         </section>
       )}
 
@@ -145,23 +146,33 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
             <img src={`/api/jobs/${job.id}/pages/1/preview?version=translated&dpi=60`} alt="Portada del libro" />
             <div>
               <h2>Resultado</h2>
-              <p><strong>Archivo:</strong> {job.output_name}</p>
-              <p><strong>Páginas:</strong> {job.page_count}</p>
-              <p><strong>Páginas para revisar:</strong> {job.review_pages.length}</p>
+              <dl className="facts">
+                <div><dt>Archivo</dt><dd>{job.output_name}</dd></div>
+                <div><dt>Páginas</dt><dd>{job.page_count}</dd></div>
+                <div><dt>Páginas para revisar</dt><dd>{job.review_pages.length}</dd></div>
+              </dl>
               <div className="row">
                 <a className="btn" href={`/api/jobs/${job.id}/download`}><IconDownload /> Descargar PDF</a>
-                <a className="btn" href={`/api/jobs/${job.id}/download?format=epub`}><IconDownload /> Para Kindle (EPUB)</a>
-                <a className="btn secondary" href={`/api/jobs/${job.id}/report`}>Descargar reporte</a>
+                <a className="btn secondary" href={`/api/jobs/${job.id}/download?format=epub`}><IconDownload /> Kindle (EPUB)</a>
+                <a className="btn secondary" href={azw3 ? `/api/jobs/${job.id}/download?format=azw3` : undefined}
+                  aria-disabled={!azw3}><IconDownload /> Kindle (AZW3)</a>
+                <a className="btn ghost" href={`/api/jobs/${job.id}/report`}>Descargar reporte</a>
               </div>
+              {!azw3 && (
+                <p className="muted">
+                  El AZW3 necesita Calibre en el equipo del servidor (<code>sudo apt install calibre</code>).
+                </p>
+              )}
               <p className="muted">
-                Para leerlo en tu Kindle, envía el EPUB con <a href="https://www.amazon.com/sendtokindle" target="_blank" rel="noreferrer">Send to Kindle</a>{" "}
-                (web, hasta 200 MB) o por correo a tu dirección @kindle.com (hasta 50 MB). Amazon lo convierte solo. La
-                primera descarga del EPUB puede tardar unos segundos.
+                Para leerlo en tu Kindle: copia el AZW3 por USB, o envía el EPUB con{" "}
+                <a href="https://www.amazon.com/sendtokindle" target="_blank" rel="noreferrer">Send to Kindle</a>{" "}
+                (web, hasta 200 MB) o por correo a tu dirección @kindle.com (hasta 50 MB). La primera descarga del
+                EPUB o del AZW3 puede tardar unos segundos.
               </p>
             </div>
           </div>
           {job.review_pages.length > 0 && (
-            <div className="alert warn">
+            <div className="alert">
               <IconWarn />
               <div>
                 <strong>Páginas que conviene revisar:</strong>
@@ -170,7 +181,8 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
                     <li key={p.page}>Página {p.page}: {p.reasons.join("; ")}</li>
                   ))}
                 </ul>
-                {job.review_pages.length > 20 && <p>… y {job.review_pages.length - 20} más (ver reporte).</p>}
+                {job.review_pages.length > 20 && <p>… y {job.review_pages.length - 20} más.</p>}
+                <p><Link href={`/admin/jobs/${job.id}`}>Revisarlas en administración</Link></p>
               </div>
             </div>
           )}
@@ -178,34 +190,16 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
       )}
 
       <section className="card">
-        <div className="card-head">
-          <IconLayers className="head-icon" width={38} height={38} />
-          <h2>Etapas</h2>
-        </div>
+        <h2>Etapas</h2>
         <ul className="stages">
           {job.stages.map((s) => (
             <li key={s.key} className={s.state}>
-              <span className={`dot ${s.state}`} aria-hidden>
-                {s.state === "completed" && <IconCheck width={16} height={16} strokeWidth={3.2} />}
-                {(s.state === "error" || s.state === "cancelled") && <IconX width={14} height={14} strokeWidth={3} />}
-              </span>
               <span className="name">{s.label}</span>
               <span className={`badge ${s.state}`}><BadgeIcon state={s.state} /> {STATE_TEXT[s.state]}</span>
             </li>
           ))}
         </ul>
       </section>
-
-      {!done && (
-        <div className="tip">
-          <Bulb className="bulb" />
-          <span>
-            Este proceso puede tardar unos minutos.<br />
-            Puedes cerrar esta ventana y volver más tarde a esta misma dirección: el proceso sigue en curso.
-          </span>
-          <Sparkle className="deco" size={26} style={{ right: 34, top: 18 }} />
-        </div>
-      )}
     </main>
   );
 }

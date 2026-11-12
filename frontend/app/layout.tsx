@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Nunito } from "next/font/google";
-import { IconHome, LogoBook } from "./components/art";
+import { Inter } from "next/font/google";
+import { IconBook } from "./components/art";
+import { SideNav } from "./components/nav";
+import "./tokens.css";
 import "./globals.css";
 
-const font = Nunito({ subsets: ["latin"], weight: ["400", "600", "700", "800", "900"], display: "swap" });
+// Inter es la primera familia de --font-family-body; next/font la sirve desde el propio sitio
+const font = Inter({ subsets: ["latin"], display: "swap" });
 
 export const metadata: Metadata = {
   title: "AstroBooks · Traductor de libros",
@@ -15,18 +18,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="es">
       <body className={font.className}>
-        <div className="shell">
+        <div className="app">
           <header className="topbar">
             <Link href="/" className="brand" aria-label="AstroBooks, inicio">
-              <LogoBook size={36} />
+              <IconBook width={22} height={22} />
               <span>AstroBooks</span>
             </Link>
-            <nav className="topnav">
-              <Link href="/" className="pill"><IconHome width={20} height={20} /> Inicio</Link>
-              <Link href="/settings" className="pill">Ajustes</Link>
-            </nav>
+            <span className="topbar-note">Traductor de libros PDF</span>
           </header>
-          {children}
+          <SideNav />
+          <div className="content">{children}</div>
         </div>
       </body>
     </html>

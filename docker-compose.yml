@@ -1,32 +1,40 @@
+# Levanta todo el servicio: api (FastAPI) + worker (pipeline) + frontend (Next.js).
+#   cp .env.example .env   # DEEPSEEK_API_KEY y/o CLAUDE_CODE_OAUTH_TOKEN (de `claude setup-token`)
+#   docker compose up --build -d
+# El método (suscripción de Claude o API de DeepSeek) se elige en Administración › Configuración.
+x-backend: &backend
+  image: traductor-backend
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    DATABASE_URL: sqlite:////data/app.db
+    DATA_DIR: /data
+    CORS_ORIGINS: http://localhost:${WEB_PORT:-3000}
+  volumes:
+    - ./data:/data
+  restart: unless-stopped
+
 services:
   api:
-    build: ./backend
-    image: traductor-backend
+    <<: *backend
+    build:
+      context: ./backend
+      args:
+        APP_UID: ${APP_UID:-1000}
+        APP_GID: ${APP_GID:-1000}
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
-    env_file:
-      - path: .env
-        required: false
-    environment:
-      DATABASE_URL: sqlite:////data/app.db
-      DATA_DIR: /data
-    volumes:
-      - ./data:/data
     ports:
-      - "8000:8000"
+      - "${API_PORT:-8000}:8000"
 
   worker:
-    image: traductor-backend
-    command: sh -c "sleep 3 && python -m app.worker"
-    env_file:
-      - path: .env
-        required: false
-    environment:
-      DATABASE_URL: sqlite:////data/app.db
-      DATA_DIR: /data
-    volumes:
-      - ./data:/data
+    <<: *backend
+    command: python -m app.worker
+    healthcheck:
+      disable: true
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
   frontend:
     build:
@@ -34,6 +42,8 @@ services:
       args:
         BACKEND_URL: http://api:8000
     ports:
-      - "3000:3000"
+      - "${WEB_PORT:-3000}:3000"
+    restart: unless-stopped
     depends_on:
-      - api
+      api:
+        condition: service_healthy

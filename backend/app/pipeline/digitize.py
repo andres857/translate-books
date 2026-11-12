@@ -313,6 +313,7 @@ def correct_segments(segments: list[Segment], translator, cache, lang: str, conc
                     text = sanitize_html(str((out.get(s.key) or {}).get("text") or ""))
                     issues = check_correction(s.html, text) if text else ["sin respuesta"]
                     if issues:
+                        s.rejected_text = text  # el playground la muestra junto al motivo del rechazo
                         s.issues.extend(issues)
                         stats.rejected += 1
                         continue

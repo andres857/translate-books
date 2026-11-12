@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.db.models import Document, Job, Page
 from app.db.session import SessionLocal, get_db
+from app.pipeline.azw3 import Azw3Unavailable, azw3_path_for, build_azw3, ebook_convert_available
 from app.pipeline.digitize import ocrmypdf_available
 from app.pipeline.epub import build_epub_for_job, epub_path_for
 
@@ -59,10 +60,13 @@ def job_status(job: Job) -> dict:
         "progress": job.progress,
         "current_page": job.current_page,
         "page_count": job.document.page_count,
+        "document_id": job.document_id,
         "original_name": job.document.original_name,
         "title_es": job.document.title_es,
         "output_name": Path(job.output_path).name if job.output_path else None,
         "error": job.error,
+        "recomposing": bool(options.get("recompose")),
+        "recompose_error": options.get("recompose_error"),
         "stages": stages,
         "review_pages": review,
     }
@@ -182,8 +186,11 @@ def download(job_id: int, format: str = "pdf", db: Session = Depends(get_db)):
     if format == "epub":
         path = _epub_for(db, job)
         return FileResponse(path, media_type="application/epub+zip", filename=path.name)
+    if format == "azw3":
+        path = _azw3_for(db, job)
+        return FileResponse(path, media_type="application/vnd.amazon.ebook", filename=path.name)
     if format != "pdf":
-        raise HTTPException(400, "Formato no disponible. Usa pdf o epub.")
+        raise HTTPException(400, "Formato no disponible. Usa pdf, epub o azw3.")
     return FileResponse(job.output_path, media_type="application/pdf", filename=Path(job.output_path).name)
 
 
@@ -199,6 +206,24 @@ def _epub_for(db: Session, job: Job) -> Path:
                 build_epub_for_job(db, job)
             except Exception as e:  # noqa: BLE001
                 raise HTTPException(500, "No se pudo generar el EPUB de este libro.") from e
+    return path
+
+
+def _azw3_for(db: Session, job: Job) -> Path:
+    """AZW3 para Kindle: se convierte desde el EPUB con Calibre la primera vez (o si el EPUB cambió)."""
+    if not ebook_convert_available():
+        raise HTTPException(409, "Para descargar AZW3 hace falta Calibre en el equipo del servidor "
+                                 "(sudo apt install calibre). El EPUB sigue disponible.")
+    epub = _epub_for(db, job)
+    path = azw3_path_for(job.output_path)
+    with _epub_locks.setdefault(-job.id, threading.Lock()):
+        if not path.exists() or path.stat().st_mtime < epub.stat().st_mtime:
+            try:
+                build_azw3(epub, path)
+            except Azw3Unavailable as e:
+                raise HTTPException(409, str(e)) from e
+            except Exception as e:  # noqa: BLE001
+                raise HTTPException(500, "No se pudo generar el AZW3 de este libro.") from e
     return path
 
 

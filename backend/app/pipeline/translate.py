@@ -14,6 +14,7 @@ import os
 import re
 import subprocess
 import tempfile
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Callable, Protocol
@@ -97,10 +98,55 @@ REGLAS OBLIGATORIAS:
    guion al final de un segmento ("read-") y siga en el siguiente ("ing"); déjalas como están.
 
 Responde SOLO con JSON con esta forma:
-{{"segments": [{{"id": "...", "text": "...", "issues": ["..."]}}]}}
+{"segments": [{"id": "...", "text": "...", "issues": ["..."]}]}
 """
 CORRECT_PROMPT_VERSION = "c2"
 OCR_LANG_NAMES = {"en": "inglés", "es": "español", "auto": "inglés o español"}
+
+
+def render_correct(template: str, lang: str) -> str:
+    """Rellena {lang} sin str.format: un borrador puede contener llaves de JSON sin escapar."""
+    return template.replace("{lang}", OCR_LANG_NAMES.get(lang, "inglés"))
+
+
+class UsageMeter:
+    """Suma llamadas, tokens y costo de un traductor (playground). Un costo desconocido no es cero: si alguna
+    llamada no lo informa, el total queda en None."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.calls = self.tokens_in = self.tokens_out = 0
+        self.cost_usd = 0.0
+        self.cost_unknown = False
+
+    def add(self, tokens_in: int = 0, tokens_out: int = 0, cost_usd: float | None = None) -> None:
+        with self._lock:
+            self.calls += 1
+            self.tokens_in += int(tokens_in or 0)
+            self.tokens_out += int(tokens_out or 0)
+            if cost_usd is None:
+                self.cost_unknown = True
+            else:
+                self.cost_usd += float(cost_usd)
+
+    def snapshot(self) -> dict:
+        with self._lock:
+            return {"calls": self.calls, "tokens_in": self.tokens_in, "tokens_out": self.tokens_out,
+                    "cost_usd": None if self.cost_unknown or not self.calls else round(self.cost_usd, 6)}
+
+
+class PromptMixin:
+    """Prompts sobrescribibles (borradores del playground) y medidor de uso opcional."""
+
+    prompts: dict | None = None
+    meter: UsageMeter | None = None
+
+    def prompt(self, task: str) -> str:
+        return (self.prompts or {}).get(task) or DEFAULT_PROMPTS[task]
+
+    def _measure(self, tokens_in=0, tokens_out=0, cost_usd=None) -> None:
+        if self.meter is not None:
+            self.meter.add(tokens_in, tokens_out, cost_usd)
 
 
 class Translator(Protocol):
@@ -140,15 +186,16 @@ class FatalAPIError(RuntimeError):
     """Error no recuperable: llave inválida, saldo insuficiente, modelo inexistente."""
 
 
-class DeepSeekTranslator:
+class DeepSeekTranslator(PromptMixin):
     def __init__(self, api_key: str, model: str, base_url: str = "https://api.deepseek.com", timeout: float = 180,
-                 thinking: str = "disabled"):
+                 thinking: str = "disabled", prompts: dict | None = None):
         if not api_key:
             raise FatalAPIError("Falta DEEPSEEK_API_KEY en el archivo .env")
         self.model = model
         # razonamiento del modelo en la traducción: disabled | low | high | max. El abreviado y la
         # extracción de nombres van siempre sin razonamiento (tareas mecánicas).
         self.thinking = thinking
+        self.prompts = prompts
         self._client = httpx.Client(base_url=base_url, timeout=timeout,
                                     headers={"Authorization": f"Bearer {api_key}"})
 
@@ -176,6 +223,8 @@ class DeepSeekTranslator:
             # errores no recuperables (llave inválida, saldo insuficiente...)
             raise FatalAPIError(f"DeepSeek respondió {resp.status_code}: {resp.text[:300]}")
         data = resp.json()
+        usage = data.get("usage") or {}
+        self._measure(usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0), None)  # sin tarifa: costo desconocido
         content = data["choices"][0]["message"]["content"] or ""
         if data["choices"][0].get("finish_reason") == "length":
             raise TruncatedError("respuesta truncada por longitud")
@@ -184,9 +233,8 @@ class DeepSeekTranslator:
     def translate_batch(self, items: list[dict], context: dict) -> dict[str, dict]:
         payload = {"book_title": context.get("title", ""), "glossary": context.get("glossary", {}),
                    "segments": items}
-        user = ("Traduce al español los segmentos de este JSON. 'type' indica si es título, cuerpo, índice, "
-                "leyenda o tabla.\n" + json.dumps(payload, ensure_ascii=False))
-        out = self._chat_json(SYSTEM_PROMPT, user, thinking=self.thinking)
+        user = TRANSLATE_USER_INTRO + "\n" + json.dumps(payload, ensure_ascii=False)
+        out = self._chat_json(self.prompt("translate"), user, thinking=self.thinking)
         result = {}
         for s in out.get("segments", []):
             if isinstance(s, dict) and "id" in s:
@@ -195,16 +243,16 @@ class DeepSeekTranslator:
 
     def shorten_batch(self, items: list[dict], context: dict) -> dict[str, dict]:
         # abreviar es una decisión editorial delicada (no perder sentido): mismo razonamiento que al traducir
-        out = self._chat_json(SHORTEN_PROMPT, json.dumps({"book_title": context.get("title", ""), "segments": items},
+        out = self._chat_json(self.prompt("shorten"), json.dumps({"book_title": context.get("title", ""), "segments": items},
                                                          ensure_ascii=False), thinking=self.thinking)
         return {str(s["id"]): s for s in out.get("segments", []) if isinstance(s, dict) and "id" in s}
 
     def extract_names(self, text: str) -> list[dict]:
-        out = self._chat_json(NAMES_PROMPT, text[:12000], max_tokens=6000)
+        out = self._chat_json(self.prompt("names"), text[:12000], max_tokens=6000)
         return [n for n in out.get("names", []) if isinstance(n, dict) and n.get("text")]
 
     def correct_batch(self, items: list[dict], context: dict) -> dict[str, dict]:
-        prompt = CORRECT_PROMPT.format(lang=OCR_LANG_NAMES.get(context.get("lang", "en"), "inglés"))
+        prompt = render_correct(self.prompt("correct"), context.get("lang", "en"))
         out = self._chat_json(prompt, json.dumps({"segments": items}, ensure_ascii=False))
         return {str(s["id"]): s for s in out.get("segments", []) if isinstance(s, dict) and "id" in s}
 
@@ -242,14 +290,17 @@ CLAUDE_LOGIN_TEXTS = ("not logged in", "please run /login", "invalid api key", "
 CLAUDE_PAID_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
 
 
-class ClaudeCLITranslator:
+class ClaudeCLITranslator(PromptMixin):
     """Traduce con la CLI oficial `claude -p` usando el login de la suscripción del usuario (sin llave de API).
 
     Cada llamada va aislada: sin herramientas, sin MCP, sin settings ni memoria, sin sesión persistente y en una
     carpeta temporal; el texto del libro solo viaja por stdin."""
 
-    def __init__(self, model: str = "sonnet", binary: str = "claude", timeout: float = 300, effort: str | None = None):
+    def __init__(self, model: str = "sonnet", binary: str = "claude", timeout: float = 300, effort: str | None = None,
+                 oauth_token: str = "", prompts: dict | None = None):
         self.cli_model = model
+        self.prompts = prompts
+        self.oauth_token = oauth_token  # token de `claude setup-token`: solo por entorno, nunca por argv
         self.model = f"claude-{model}"  # entra en la clave de caché: no se mezcla con DeepSeek
         self.binary = binary
         self.timeout = timeout
@@ -268,6 +319,9 @@ class ClaudeCLITranslator:
            stop=stop_after_attempt(4), wait=wait_exponential(multiplier=2, max=60), reraise=True)
     def _chat_json(self, system: str, user: str, schema: dict) -> dict:
         env = {k: v for k, v in os.environ.items() if k not in CLAUDE_PAID_ENV}
+        env.update(DISABLE_AUTOUPDATER="1", CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="1")
+        if self.oauth_token:
+            env["CLAUDE_CODE_OAUTH_TOKEN"] = self.oauth_token
         try:
             with tempfile.TemporaryDirectory(prefix="claude-call-") as cwd:
                 done = subprocess.run(self.command(system, schema), input=user, capture_output=True, text=True,
@@ -280,6 +334,12 @@ class ClaudeCLITranslator:
             final = json.loads(done.stdout or "")
         except ValueError:
             final = None
+        if isinstance(final, dict):
+            usage = final.get("usage") or {}
+            cost = final.get("total_cost_usd")
+            self._measure(usage.get("input_tokens", 0) + usage.get("cache_read_input_tokens", 0)
+                          + usage.get("cache_creation_input_tokens", 0), usage.get("output_tokens", 0),
+                          float(cost) if isinstance(cost, (int, float)) else None)
         message = str((final or {}).get("result") or "") if isinstance(final, dict) else ""
         evidence = (message + "\n" + (done.stderr or "")[-2000:]).lower()
         if not isinstance(final, dict) or final.get("is_error") or done.returncode:
@@ -299,24 +359,73 @@ class ClaudeCLITranslator:
     def translate_batch(self, items: list[dict], context: dict) -> dict[str, dict]:
         payload = {"book_title": context.get("title", ""), "glossary": context.get("glossary", {}),
                    "segments": items}
-        user = ("Traduce al español los segmentos de este JSON. 'type' indica si es título, cuerpo, índice, "
-                "leyenda o tabla.\n" + json.dumps(payload, ensure_ascii=False))
-        out = self._chat_json(SYSTEM_PROMPT, user, SEGMENTS_SCHEMA)
+        user = TRANSLATE_USER_INTRO + "\n" + json.dumps(payload, ensure_ascii=False)
+        out = self._chat_json(self.prompt("translate"), user, SEGMENTS_SCHEMA)
         return {str(s["id"]): s for s in out.get("segments", []) if isinstance(s, dict) and "id" in s}
 
     def shorten_batch(self, items: list[dict], context: dict) -> dict[str, dict]:
-        out = self._chat_json(SHORTEN_PROMPT, json.dumps({"book_title": context.get("title", ""), "segments": items},
+        out = self._chat_json(self.prompt("shorten"), json.dumps({"book_title": context.get("title", ""), "segments": items},
                                                          ensure_ascii=False), SEGMENTS_SCHEMA)
         return {str(s["id"]): s for s in out.get("segments", []) if isinstance(s, dict) and "id" in s}
 
     def extract_names(self, text: str) -> list[dict]:
-        out = self._chat_json(NAMES_PROMPT, text[:12000], NAMES_SCHEMA)
+        out = self._chat_json(self.prompt("names"), text[:12000], NAMES_SCHEMA)
         return [n for n in out.get("names", []) if isinstance(n, dict) and n.get("text")]
 
     def correct_batch(self, items: list[dict], context: dict) -> dict[str, dict]:
-        prompt = CORRECT_PROMPT.format(lang=OCR_LANG_NAMES.get(context.get("lang", "en"), "inglés"))
+        prompt = render_correct(self.prompt("correct"), context.get("lang", "en"))
         out = self._chat_json(prompt, json.dumps({"segments": items}, ensure_ascii=False), CORRECT_SCHEMA)
         return {str(s["id"]): s for s in out.get("segments", []) if isinstance(s, dict) and "id" in s}
+
+
+TRANSLATE_USER_INTRO = ("Traduce al español los segmentos de este JSON. 'type' indica si es título, cuerpo, índice, "
+                        "leyenda o tabla.")
+DEFAULT_PROMPTS = {"translate": SYSTEM_PROMPT, "correct": CORRECT_PROMPT, "shorten": SHORTEN_PROMPT,
+                   "names": NAMES_PROMPT}
+_DS_JSON = "response_format = json_object (modo JSON); el prompt pide la forma exacta del JSON."
+_CLAUDE_CLI = ("claude -p --json-schema … --system-prompt <prompt> --tools \"\" (sin herramientas, MCP, settings, "
+               "memoria ni sesión); el texto viaja por stdin.")
+
+
+def _schema(obj: dict) -> str:
+    return json.dumps(obj, ensure_ascii=False, indent=2)
+
+
+# Registro de solo lectura para Administración › Prompts (los borradores del playground no lo cambian)
+PROMPTS: dict[str, dict] = {
+    "translate": {
+        "title": "Traducción", "mode": "translate", "version": PROMPT_VERSION, "text": SYSTEM_PROMPT,
+        "description": "Traduce los bloques de cada página (lotes de segmentos con id, tipo y marcadores protegidos).",
+        "user_template": TRANSLATE_USER_INTRO + '\n{"book_title": "…", "glossary": {"…": "…"}, '
+                         '"segments": [{"id": "p012_s03", "type": "body", "text": "…", "context": "…"}]}',
+        "output": {"deepseek": f"{_DS_JSON} Razonamiento según Configuración (disabled/low/high/max).",
+                   "claude": f"{_CLAUDE_CLI}\nEsquema:\n{_schema(SEGMENTS_SCHEMA)}"},
+    },
+    "correct": {
+        "title": "Corrección OCR (digitalizar)", "mode": "digitize", "version": CORRECT_PROMPT_VERSION,
+        "text": CORRECT_PROMPT,
+        "description": "Corrige errores de reconocimiento de libros escaneados, sin traducir. {lang} se rellena con "
+                       "el idioma elegido al digitalizar.",
+        "user_template": '{"segments": [{"id": "p004_s01", "text": "…"}]}',
+        "output": {"deepseek": f"{_DS_JSON} Sin razonamiento.",
+                   "claude": f"{_CLAUDE_CLI}\nEsquema:\n{_schema(CORRECT_SCHEMA)}"},
+    },
+    "shorten": {
+        "title": "Acortar", "mode": "translate", "version": PROMPT_VERSION, "text": SHORTEN_PROMPT,
+        "description": "Solo cuando una traducción no cabe en su caja: pide una versión más breve con max_chars.",
+        "user_template": '{"book_title": "…", "segments": [{"id": "…", "type": "body", "original": "…", "current": "…", '
+                         '"max_chars": 42}]}',
+        "output": {"deepseek": f"{_DS_JSON} Mismo razonamiento que la traducción.",
+                   "claude": f"{_CLAUDE_CLI}\nEsquema:\n{_schema(SEGMENTS_SCHEMA)}"},
+    },
+    "names": {
+        "title": "Nombres propios", "mode": "translate", "version": PROMPT_VERSION, "text": NAMES_PROMPT,
+        "description": "Antes de traducir: extrae de créditos y portada los nombres que no deben traducirse.",
+        "user_template": "Texto de las primeras páginas (máx. 12 000 caracteres).",
+        "output": {"deepseek": f"{_DS_JSON} Sin razonamiento.",
+                   "claude": f"{_CLAUDE_CLI}\nEsquema:\n{_schema(NAMES_SCHEMA)}"},
+    },
+}
 
 
 class FakeTranslator:
@@ -559,7 +668,9 @@ def translate_segments(
     on_progress: Callable[[int, int], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
     _no_groups: bool = False,
+    reprotect: bool = True,
 ) -> TranslationStats:
+    """reprotect=False: usa el protected/placeholders ya guardados (playground, fiel a lo que vio el libro)."""
     glossary = glossary or {}
     stats = TranslationStats()
     todo: list[Segment] = []
@@ -578,7 +689,7 @@ def translate_segments(
         return not (problems or "traducción vacía" in issues)
 
     for s in targets:
-        if s.protected is None or not _no_groups:
+        if s.protected is None or (not _no_groups and reprotect):
             pt = protector.protect(s.html)
             s.protected, s.placeholders = pt.text, pt.placeholders
     # los textos cortos (títulos partidos, etiquetas) se envían con sus vecinos como contexto

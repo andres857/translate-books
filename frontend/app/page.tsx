@@ -4,10 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getHealth, uploadBook, type JobMode, type OcrLang } from "@/lib/api";
-import {
-  BooksHero, CloudUpload, FlagES, FlagUK, IconArrowRight, IconChevron, IconInfo, IconWand, IconWarn,
-  LogoBook, OpenBook, Rays, Sparkle,
-} from "./components/art";
+import { IconArrowRight, IconInfo, IconUpload, IconWarn } from "./components/art";
 
 export default function UploadPage() {
   const router = useRouter();
@@ -55,35 +52,24 @@ export default function UploadPage() {
 
   return (
     <main>
-      <section className="hero">
+      <div className="page-head">
         <div>
-          <h1>
-            Traductor
-            <Rays className="rays" size={40} />
-            <br />
-            de Libros
-          </h1>
+          <h1>Traductor de libros</h1>
           <p>Sube un libro en PDF en inglés y recibe su versión en español con el mismo diseño.</p>
         </div>
-        <BooksHero className="hero-art" />
-        <Sparkle className="deco" size={20} color="#2e9b70" style={{ left: "52%", top: 40 }} />
-      </section>
+      </div>
 
       {!configured && (
-        <div className="alert warn" role="status">
+        <div className="alert" role="status">
           <IconWarn />
           <span>
-            El modo de traducción elegido aún no está listo. Revísalo en <Link href="/settings">Ajustes</Link>.
+            El modo de traducción elegido aún no está listo. Revísalo en <Link href="/admin/settings">Configuración</Link>.
           </span>
         </div>
       )}
 
       <section className="card" aria-labelledby="upload-title">
-        <div className="card-head">
-          <span className="step" aria-hidden>1</span>
-          <h2 id="upload-title">Elige tu libro</h2>
-          <LogoBook size={38} className="head-icon" />
-        </div>
+        <h2 id="upload-title">Elige tu libro</h2>
 
         <div
           className={`dropzone ${drag ? "active" : ""}`}
@@ -91,7 +77,12 @@ export default function UploadPage() {
           tabIndex={0}
           aria-label="Zona para arrastrar y soltar el PDF o seleccionarlo"
           onClick={() => inputRef.current?.click()}
-          onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && inputRef.current?.click()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              inputRef.current?.click();
+            }
+          }}
           onDragOver={(e) => {
             e.preventDefault();
             setDrag(true);
@@ -103,10 +94,7 @@ export default function UploadPage() {
             pick(e.dataTransfer.files?.[0]);
           }}
         >
-          <span className="cloud">
-            <CloudUpload size={100} />
-            <Rays className="rays" size={34} />
-          </span>
+          <IconUpload />
           {file ? (
             <p><span className="file-chip">{file.name} · {(file.size / 1024 / 1024).toFixed(1)} MB</span></p>
           ) : (
@@ -116,7 +104,7 @@ export default function UploadPage() {
           <input ref={inputRef} type="file" accept="application/pdf,.pdf" hidden onChange={(e) => pick(e.target.files?.[0])} />
         </div>
 
-        <div className="modes" role="radiogroup" aria-label="Qué hacer con el libro" style={{ marginTop: 20 }}>
+        <div className="modes" role="radiogroup" aria-label="Qué hacer con el libro">
           <button type="button" role="radio" aria-checked={mode === "translate"}
             className={`mode ${mode === "translate" ? "on" : ""}`} onClick={() => setMode("translate")}>
             <strong>Traducir al español</strong>
@@ -130,27 +118,19 @@ export default function UploadPage() {
         </div>
 
         {mode === "translate" ? (
-          <div className="langs">
-            <label className="lang">
-              <FlagUK />
-              <span style={{ flex: 1 }}>
-                <small>Idioma de origen:</small>
-                <select aria-label="Idioma de origen" defaultValue="en"><option value="en">Inglés</option></select>
-              </span>
-              <IconChevron className="chev" />
+          <div className="form-grid">
+            <label className="control">
+              Idioma de origen
+              <select defaultValue="en"><option value="en">Inglés</option></select>
             </label>
-            <label className="lang">
-              <FlagES />
-              <span style={{ flex: 1 }}>
-                <small>Idioma de destino:</small>
-                <select aria-label="Idioma de destino" defaultValue="es"><option value="es">Español</option></select>
-              </span>
-              <IconChevron className="chev" />
+            <label className="control">
+              Idioma de destino
+              <select defaultValue="es"><option value="es">Español</option></select>
             </label>
           </div>
         ) : (
           <div className="form-grid">
-            <label>
+            <label className="control">
               Idioma del libro
               <select value={ocrLang} onChange={(e) => setOcrLang(e.target.value as OcrLang)}>
                 <option value="en">Inglés</option>
@@ -158,25 +138,25 @@ export default function UploadPage() {
                 <option value="auto">Inglés y español</option>
               </select>
             </label>
-            <label className="field" style={{ marginTop: 0 }}>
+            <label className="check">
               <input type="checkbox" checked={correct} onChange={(e) => setCorrect(e.target.checked)} />
               <span>
-                Corregir errores del OCR con el modelo de <Link href="/settings">Ajustes</Link> (mejora el texto
+                Corregir errores del OCR con el modelo de <Link href="/admin/settings">Configuración</Link> (mejora el texto
                 del EPUB; el PDF conserva la capa de OCR original).
               </span>
             </label>
           </div>
         )}
 
-        <div className="note">
-          <IconInfo width={24} height={24} />
+        <div className="alert">
+          <IconInfo />
           <span>
             Funciona mejor con PDF digitales (exportados desde un programa de diseño). Los PDF escaneados pueden
             requerir más revisión. No se admiten PDF protegidos con contraseña.
           </span>
         </div>
 
-        <label className="field">
+        <label className="check">
           <input type="checkbox" checked={rights} onChange={(e) => setRights(e.target.checked)} />
           <span>Confirmo que tengo derechos para traducir y usar este libro.</span>
         </label>
@@ -186,16 +166,10 @@ export default function UploadPage() {
         )}
 
         <div className="row">
-          <span className="cta">
-            <button className="btn" disabled={!file || !rights || busy} onClick={submit}>
-              <IconWand /> {busy ? "Subiendo…" : mode === "translate" ? "Traducir libro" : "Digitalizar libro"} {!busy && <IconArrowRight />}
-            </button>
-            <Rays className="rays" size={30} />
-          </span>
+          <button className="btn lg" disabled={!file || !rights || busy} onClick={submit}>
+            {busy ? "Subiendo…" : mode === "translate" ? "Traducir libro" : "Digitalizar libro"} {!busy && <IconArrowRight />}
+          </button>
         </div>
-
-        <OpenBook className="deco" style={{ right: 30, bottom: 18, width: 120 }} />
-        <Sparkle className="deco" size={18} style={{ right: 170, bottom: 70 }} />
       </section>
     </main>
   );

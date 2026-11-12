@@ -119,7 +119,9 @@ def run_pipeline(
     options: PipelineOptions | None = None,
     progress: ProgressFn | None = None,
     should_stop: Callable[[], bool] | None = None,
+    overrides: dict[str, str] | None = None,
 ) -> PipelineResult:
+    """overrides: clave de segmento -> traducción corregida a mano (se impone tal cual, sin acortarla)."""
     opts = options or PipelineOptions()
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -215,6 +217,8 @@ def run_pipeline(
         for n in collect_proper_names(credit_texts[:12], translator):
             protector.add(n["text"], "BRAND" if str(n.get("type", "")).upper() == "BRAND" else "NAME")
     report_extra["terminos_protegidos"] = sorted(protector.terms)
+    # con su categoría: recomponer una página debe proteger igual para reutilizar la caché
+    report_extra["terminos_protegidos_categorias"] = dict(sorted(protector.terms.items()))
     tick("protect", 1, 1)
 
     # ---------------------------------------------------------------- traducción
@@ -228,6 +232,10 @@ def run_pipeline(
     )
     if should_stop and should_stop():
         raise Cancelled()
+    for s in segments:
+        if overrides and s.key in overrides:
+            s.translation, s.action, s.edited = overrides[s.key], "translate", True
+            s.issues = []
     title_es = _sentence_case(" ".join(_plain(s.translation) or s.text for s in title_segs))
     if subtitle_seg is not None:
         sub = (_plain(subtitle_seg.translation) or subtitle_seg.text).strip(" .:")
@@ -237,7 +245,9 @@ def run_pipeline(
     # ---------------------------------------------------------------- reconstrucción
     fonts = FontResolver(doc, out_dir / "_fonts", opts.fonts_dirs)
     def shorten(segs, limits):
-        shorten_segments(segs, limits, translator, cache, title, concurrency=opts.concurrency)
+        segs = [s for s in segs if not s.edited]  # lo escrito a mano no se reescribe con el modelo
+        if segs:
+            shorten_segments(segs, limits, translator, cache, title, concurrency=opts.concurrency)
 
     # progreso: la mitad para preparar, la otra mitad para dibujar
     def on_page(n, phase):
@@ -279,3 +289,65 @@ def run_pipeline(
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     tick("validate", 1, 1)
     return PipelineResult(out_pdf, report_path, report, pages, title, title_es)
+
+
+def recompose_page(
+    input_pdf: Path,
+    output_pdf: Path,
+    report_path: Path | None,
+    page_no: int,
+    translator: Translator,
+    cache: Cache,
+    protected_terms: dict[str, str] | None = None,
+    glossary: dict[str, str] | None = None,
+    overrides: dict[str, str] | None = None,
+    options: PipelineOptions | None = None,
+    progress: ProgressFn | None = None,
+    should_stop: Callable[[], bool] | None = None,
+) -> PageInfo:
+    """Vuelve a maquetar una sola página del libro ya traducido (tras corregir bloques a mano) y la
+    sustituye en el PDF de salida. El resto de páginas no se toca. Devuelve la página recompuesta."""
+    input_pdf, output_pdf = Path(input_pdf), Path(output_pdf)
+    opts = options or PipelineOptions()
+    opts.only_pages = {page_no}
+    opts.detect_names = False  # los nombres detectados en la primera pasada llegan en protected_terms
+    terms = dict(protected_terms or {})
+    report: dict = {}
+    if report_path and Path(report_path).exists():
+        report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+        for term, cat in (report.get("terminos_protegidos_categorias")
+                          or {t: "NAME" for t in report.get("terminos_protegidos", [])}).items():
+            terms.setdefault(term, cat)
+    tmp_dir = output_pdf.parent / f"_recompose_p{page_no}"
+    shutil.rmtree(tmp_dir, ignore_errors=True)
+    try:
+        result = run_pipeline(input_pdf, tmp_dir, translator, cache, terms, glossary, opts, progress, should_stop,
+                              overrides=overrides)
+        info = next(p for p in result.pages if p.number == page_no)
+        tmp_out = output_pdf.with_name(output_pdf.name + ".tmp")
+        with pymupdf.open(output_pdf) as out, pymupdf.open(result.output_pdf) as new:
+            if not 1 <= page_no <= len(out) or len(new) != len(out):
+                raise ValueError("La página no existe en el libro traducido")
+            toc = out.get_toc(simple=False)
+            out.insert_pdf(new, from_page=page_no - 1, to_page=page_no - 1, start_at=page_no - 1)
+            out.delete_page(page_no)  # la antigua quedó justo detrás de la nueva
+            if toc:
+                out.set_toc(toc)
+            out.save(tmp_out, garbage=1, deflate=True)
+        os.replace(tmp_out, output_pdf)
+        if report:
+            ok = set(report.get("paginas_correctas", [])) - {page_no}
+            review = [r for r in report.get("paginas_para_revision", []) if r.get("pagina") != page_no]
+            if info.needs_review:
+                review.append({"pagina": page_no, "motivos": info.review_reasons})
+            else:
+                ok.add(page_no)
+            report["paginas_correctas"] = sorted(ok)
+            report["paginas_para_revision"] = sorted(review, key=lambda r: r["pagina"])
+            report["paginas_recompuestas"] = sorted(set(report.get("paginas_recompuestas", [])) | {page_no})
+            tmp_rep = Path(report_path).with_name(Path(report_path).name + ".tmp")
+            tmp_rep.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+            os.replace(tmp_rep, report_path)
+        return info
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)

@@ -3,3 +3,8 @@ __pycache__
 .pytest_cache
 tests/output
 tests/fixtures/*.pdf
+# nunca dentro de la imagen: entorno local, datos y secretos
+.venv
+data
+.env
+*.egg-info

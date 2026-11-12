@@ -17,7 +17,9 @@ import json, os, sys
 stdin = sys.stdin.read()
 with open({str(log)!r}, "a") as fh:
     fh.write(json.dumps({{"argv": sys.argv[1:], "stdin": stdin, "cwd": os.getcwd(),
-                         "keys": [k for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN") if k in os.environ]}}) + "\\n")
+                         "keys": [k for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN") if k in os.environ],
+                         "oauth": os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"),
+                         "autoupdater": os.environ.get("DISABLE_AUTOUPDATER")}}) + "\\n")
 {body}
 """)
     script.chmod(script.stat().st_mode | stat.S_IEXEC)
@@ -104,3 +106,25 @@ if not flag.exists():
     out = ClaudeCLITranslator(binary=str(script)).translate_batch([{"id": "a", "type": "body", "text": "x"}], {})
     assert out["a"]["translation"] == "ES:x"
     assert len(calls(log)) == 2
+
+
+def test_oauth_token_passed_only_to_cli(tmp_path, monkeypatch):
+    """Modo contenedor: el token de `claude setup-token` llega a la CLI; las llaves de pago nunca."""
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-should-not-leak")
+    script, log = fake_cli(tmp_path, OK)
+    tr = ClaudeCLITranslator(model="sonnet", binary=str(script), oauth_token="sk-ant-oat01-secret")
+    tr.translate_batch([{"id": "a", "type": "body", "text": "The Sun"}], {"title": "T", "glossary": {}})
+    call = calls(log)[0]
+    assert call["oauth"] == "sk-ant-oat01-secret"
+    assert call["keys"] == [] and call["autoupdater"] == "1"
+    assert "sk-ant-oat01-secret" not in json.dumps(call["argv"])  # nunca por la línea de órdenes
+    assert tr.model == "claude-sonnet"  # el token no cambia la clave de caché
+
+
+def test_without_token_env_untouched(tmp_path, monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    script, log = fake_cli(tmp_path, OK)
+    ClaudeCLITranslator(binary=str(script)).translate_batch(
+        [{"id": "a", "type": "body", "text": "x"}], {"title": "T", "glossary": {}})
+    assert calls(log)[0]["oauth"] is None
