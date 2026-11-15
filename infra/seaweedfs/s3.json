@@ -1,0 +1,15 @@
+{
+  "identities": [
+    {
+      "name": "backend",
+      "credentials": [
+        { "accessKey": "dev-access-key", "secretKey": "dev-secret-key-change-me" }
+      ],
+      "actions": ["Read:uploads", "Write:uploads", "List:uploads", "Tagging:uploads", "Admin:uploads"]
+    },
+    {
+      "name": "anonymous",
+      "actions": ["Read:uploads"]
+    }
+  ]
+}

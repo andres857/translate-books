@@ -21,6 +21,7 @@ dependencies = [
   "pytesseract",
   "opencv-python-headless",
   "numpy",
+  "boto3",
 ]
 
 [project.optional-dependencies]
@@ -31,4 +32,4 @@ include = ["app*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["slow: pruebas con el PDF de referencia (lentas, pueden usar la API)"]
+markers = ["slow: pruebas con el PDF de referencia (lentas, pueden usar la API)", "s3: integración contra el SeaweedFS local (docker compose up -d seaweedfs cdn)"]

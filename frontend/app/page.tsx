@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getHealth, uploadBook, type JobMode, type OcrLang } from "@/lib/api";
+import { getHealth, uploadBook, type JobMode, type OcrLang, type UploadProgress } from "@/lib/api";
+import { UploadProgressBar } from "@/app/components/upload-progress";
 import { IconArrowRight, IconInfo, IconUpload, IconWarn } from "./components/art";
 
 export default function UploadPage() {
@@ -13,6 +14,7 @@ export default function UploadPage() {
   const [rights, setRights] = useState(false);
   const [drag, setDrag] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<UploadProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [maxMb, setMaxMb] = useState(200);
   const [configured, setConfigured] = useState(true);
@@ -41,12 +43,14 @@ export default function UploadPage() {
     if (!file) return;
     setBusy(true);
     setError(null);
+    setProgress(null);
     try {
-      const job = await uploadBook(file, rights, { mode, ocrLang, correct });
+      const job = await uploadBook(file, rights, { mode, ocrLang, correct }, setProgress);
       router.push(`/jobs/${job.id}`);
     } catch (e) {
       setError((e as Error).message);
       setBusy(false);
+      setProgress(null);
     }
   }
 
@@ -164,6 +168,8 @@ export default function UploadPage() {
         {error && (
           <div className="alert error" role="alert"><IconWarn /><span>{error}</span></div>
         )}
+
+        {busy && file && <UploadProgressBar name={file.name} progress={progress} />}
 
         <div className="row">
           <button className="btn" disabled={!file || !rights || busy} onClick={submit}>

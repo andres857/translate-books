@@ -123,6 +123,64 @@ Los estilos de toda la interfaz salen de `handoff/tokens.css` (copiado a `fronte
 | `APP_UID` / `APP_GID` | Usuario con el que corren los contenedores (dueño de `data/`). |
 | `EBOOK_CONVERT_BIN` | Ruta de `ebook-convert` (Calibre) si no está en el `PATH`. |
 
+## Almacenamiento de archivos (S3 + CDN)
+
+`docker compose up -d` levanta también:
+
+| Servicio | Puerto | Qué hace |
+|---|---|---|
+| `seaweedfs` | `S3_PORT` (8333) | API compatible con S3 (`weed mini`), datos en el volumen `seaweedfs-data`. Credenciales en `infra/seaweedfs/s3.json` (identidad `backend` con todo sobre `uploads`; `anonymous` solo lectura). |
+| `storage-init` | — | Crea el bucket si falta y aplica su CORS (`S3_CORS_ORIGINS`) para las subidas prefirmadas desde el navegador; luego termina. |
+| `cdn` | `CDN_PORT` (8080) | Nginx con caché delante de SeaweedFS: solo GET/HEAD, `Cache-Control: public, max-age=604800`, cabecera `X-Cache-Status`. |
+
+La base de datos guarda solo la **key** (`files/<yyyy>/<mm>/<uuid>.<ext>`); la URL pública se construye con
+`PUBLIC_BASE_URL + "/" + key`, así que cambiar de proveedor o de CDN no exige migrar datos. El código usa
+el puerto `app/storage/port.py` (`Depends(get_storage)`); `boto3` solo aparece en `app/storage/adapters/`.
+
+Endpoints de ejemplo (`/api/files`, máximo `UPLOAD_MAX_SIZE_MB`, tipos `UPLOAD_ALLOWED_MIME`, el tipo real se
+comprueba por los *magic bytes*):
+
+```bash
+curl -F file=@foto.png localhost:8000/api/files                 # → {id, key, url} (url al CDN)
+curl -I <url>; curl -I <url>                                      # X-Cache-Status: MISS y luego HIT
+curl -X POST localhost:8000/api/files/presign -H 'Content-Type: application/json' \
+     -d '{"filename":"foto.png","contentType":"image/png","size":12345}'   # → {url, key, expires_at} (5 min)
+curl -X PUT -H 'Content-Type: image/png' --data-binary @foto.png '<url prefirmada>'
+curl -X POST localhost:8000/api/files/confirm -H 'Content-Type: application/json' \
+     -d '{"key":"<key>","filename":"foto.png","contentType":"image/png","size":12345}'
+curl localhost:8000/api/files/1        # URL pública, o prefirmada si se subió con private=true
+curl -X DELETE localhost:8000/api/files/1
+```
+
+Probar el bucket con la CLI de AWS:
+
+```bash
+AWS_ACCESS_KEY_ID=dev-access-key AWS_SECRET_ACCESS_KEY=dev-secret-key-change-me \
+  aws s3 ls s3://uploads --recursive --endpoint-url http://localhost:8333
+```
+
+Si hiciera falta reaplicar el CORS a mano: `docker compose run --rm storage-init`
+(o `aws s3api put-bucket-cors --endpoint-url http://localhost:8333 ...`).
+
+Pruebas: `pytest tests/test_files.py` (storage falso) y `pytest -m s3` (contra el SeaweedFS y el CDN del compose;
+se saltan si no responden).
+
+### Subida de libros con progreso real
+
+Las subidas de libros (página principal y Playground) van directas del navegador al S3 con una URL prefirmada
+(`POST /api/jobs/presign` → `PUT` → `POST /api/jobs/from-upload`), así la barra muestra los bytes realmente
+enviados. El backend copia el PDF a `DATA_DIR` (el pipeline no cambia) y borra el temporal
+`books/incoming/…`. Si el S3 no responde, la subida pasa por `POST /api/jobs` como antes, también con progreso.
+En S3/R2 conviene una regla de ciclo de vida que borre `books/incoming/` a 1 día (subidas abandonadas).
+
+### Cambiar a AWS S3, DigitalOcean Spaces o Cloudflare R2
+
+Solo `.env`: copia el bloque de `infra/env/aws-s3.env`, `do-spaces.env` o `cloudflare-r2.env`
+(endpoint, región — `auto` en R2 —, path-style, credenciales y `PUBLIC_BASE_URL` del CDN/dominio público).
+Dentro de Docker define también `S3_INTERNAL_ENDPOINT` y `S3_PUBLIC_ENDPOINT` (el compose usa por defecto los
+de SeaweedFS) y quita los servicios `seaweedfs`/`cdn` si no los necesitas. No se usan ACL por objeto (R2 no
+las soporta): el acceso público se da a nivel de bucket (política, dominio propio, r2.dev o CDN de Spaces).
+
 ## Prueba con el libro de referencia
 
 Copia el PDF a `backend/tests/fixtures/` (está excluido de git) y ejecuta:

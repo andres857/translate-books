@@ -9,14 +9,19 @@ from pathlib import Path
 import pymupdf
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.api.storage_errors import storage_call
 from app.config import get_settings
 from app.db.models import Document, Job, Page
 from app.db.session import SessionLocal, get_db
 from app.pipeline.azw3 import Azw3Unavailable, azw3_path_for, build_azw3, ebook_convert_available
 from app.pipeline.digitize import ocrmypdf_available
 from app.pipeline.epub import build_epub_for_job, epub_path_for
+from app.storage import StoragePort, get_storage
+from app.storage.errors import StorageError
+from app.storage.keys import generate_key
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -77,17 +82,9 @@ def job_status(job: Job) -> dict:
     }
 
 
-@router.post("")
-async def create_job(
-    file: UploadFile = File(...),
-    rights_confirmed: bool = Form(...),
-    source_lang: str = Form("en"),
-    target_lang: str = Form("es"),
-    mode: str = Form("translate"),
-    ocr_lang: str = Form("en"),
-    correct_ocr: bool = Form(False),
-    db: Session = Depends(get_db),
-):
+def _create_job_from_bytes(db: Session, data: bytes, filename: str, rights_confirmed: bool, source_lang: str,
+                          target_lang: str, mode: str, ocr_lang: str, correct_ocr: bool) -> dict:
+    """Valida el PDF, lo guarda en `uploads_dir` y encola el job (común a la subida directa y a la de S3)."""
     st = get_settings()
     if not rights_confirmed:
         raise HTTPException(400, "Debes confirmar que tienes derechos de uso sobre el libro.")
@@ -100,7 +97,6 @@ async def create_job(
             raise HTTPException(400, "Este equipo no tiene OCRmyPDF/Tesseract instalados; no se puede digitalizar.")
     elif (source_lang, target_lang) != ("en", "es"):
         raise HTTPException(400, "Por ahora solo se admite traducción de inglés a español.")
-    data = await file.read(st.max_upload_mb * 1024 * 1024 + 1)
     if len(data) > st.max_upload_mb * 1024 * 1024:
         raise HTTPException(413, f"El archivo supera el límite de {st.max_upload_mb} MB.")
     if not data.startswith(b"%PDF"):
@@ -120,7 +116,7 @@ async def create_job(
     path = folder / "original.pdf"
     if not path.exists():
         path.write_bytes(data)
-    doc = Document(original_name=file.filename or "libro.pdf", path=str(path), sha256=sha, page_count=len(pdf))
+    doc = Document(original_name=filename or "libro.pdf", path=str(path), sha256=sha, page_count=len(pdf))
     db.add(doc)
     db.flush()
     options = ({"mode": "digitize", "ocr_lang": ocr_lang, "correct": bool(correct_ocr)} if mode == "digitize"
@@ -130,6 +126,81 @@ async def create_job(
     db.add(job)
     db.commit()
     return job_status(job)
+
+
+@router.post("")
+async def create_job(
+    file: UploadFile = File(...),
+    rights_confirmed: bool = Form(...),
+    source_lang: str = Form("en"),
+    target_lang: str = Form("es"),
+    mode: str = Form("translate"),
+    ocr_lang: str = Form("en"),
+    correct_ocr: bool = Form(False),
+    db: Session = Depends(get_db),
+):
+    """Subida a través del backend (respaldo cuando el almacenamiento S3 no está disponible)."""
+    st = get_settings()
+    data = await file.read(st.max_upload_mb * 1024 * 1024 + 1)
+    return _create_job_from_bytes(db, data, file.filename or "libro.pdf", rights_confirmed, source_lang, target_lang,
+                                  mode, ocr_lang, correct_ocr)
+
+
+# ---- subida directa del navegador a S3 con URL prefirmada (progreso real de bytes)
+INCOMING = "books/incoming"
+
+
+class PresignBookIn(BaseModel):
+    filename: str = Field(min_length=1, max_length=512)
+    size: int = Field(gt=0)
+
+
+class FromUploadIn(BaseModel):
+    key: str = Field(min_length=1, max_length=512)
+    filename: str = Field(min_length=1, max_length=512)
+    rights_confirmed: bool
+    source_lang: str = "en"
+    target_lang: str = "es"
+    mode: str = "translate"
+    ocr_lang: str = "en"
+    correct_ocr: bool = False
+
+
+def _check_book_size(size: int) -> None:
+    st = get_settings()
+    if size > st.max_upload_mb * 1024 * 1024:
+        raise HTTPException(413, f"El archivo supera el límite de {st.max_upload_mb} MB.")
+
+
+@router.post("/presign")
+def presign_book(body: PresignBookIn, storage: StoragePort = Depends(get_storage)):
+    if not body.filename.lower().endswith(".pdf"):
+        raise HTTPException(400, "Solo se admiten archivos PDF.")
+    _check_book_size(body.size)
+    p = storage_call(storage.presigned_upload_url, generate_key(INCOMING, "application/pdf"), "application/pdf", 900)
+    return {"url": p.url, "key": p.key, "expires_at": p.expires_at.isoformat(), "method": "PUT",
+            "headers": {"Content-Type": "application/pdf"}}
+
+
+@router.post("/from-upload")
+def create_job_from_upload(body: FromUploadIn, storage: StoragePort = Depends(get_storage),
+                           db: Session = Depends(get_db)):
+    if not body.key.startswith(f"{INCOMING}/") or ".." in body.key:
+        raise HTTPException(400, "Clave no válida.")
+    meta = storage_call(storage.get_metadata, body.key)
+    if meta is None:
+        raise HTTPException(400, "No encontramos el archivo subido. Vuelve a subirlo.")
+    try:
+        _check_book_size(meta.size)
+        data = storage_call(storage.download, body.key)
+        return _create_job_from_bytes(db, data, body.filename, body.rights_confirmed, body.source_lang,
+                                      body.target_lang, body.mode, body.ocr_lang, body.correct_ocr)
+    finally:
+        # el PDF queda en DATA_DIR; el objeto de S3 era solo un temporal
+        try:
+            storage.delete(body.key)
+        except StorageError:
+            pass
 
 
 @router.get("")

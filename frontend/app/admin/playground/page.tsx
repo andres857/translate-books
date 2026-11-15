@@ -10,6 +10,8 @@ import {
   voteRunPage, type Chapter, type JobStatus, type Estimate, type PlaygroundBook, type PlaygroundRun, type PlaygroundScope, type PlaygroundTask,
   type PromptDraft, type RunPage, type VariantInput,
 } from "@/lib/api";
+import type { UploadProgress } from "@/lib/api";
+import { UploadProgressBar } from "@/app/components/upload-progress";
 import { IconCheck, IconHourglass, IconUpload, IconWarn, IconX } from "../../components/art";
 import { Panel, type PanelColumn } from "./panel";
 import { ScopeDialog, type ScopeValue } from "./scope-dialog";
@@ -59,6 +61,7 @@ export default function PlaygroundPage() {
   const [drag, setDrag] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const [rights, setRights] = useState(false);
+  const [uploading, setUploading] = useState<UploadProgress | null | false>(false); // false = sin subida en curso
   const [prep, setPrep] = useState<JobStatus | null>(null);
   // resumen de la última preparación, mostrado en la vista de subida
   const [prepDone, setPrepDone] = useState<{ name: string; pages: number; blocks: number; chapters: number; detected: boolean } | null>(null);
@@ -220,13 +223,16 @@ export default function PlaygroundPage() {
   async function prepareUpload() {
     if (!file || !rights) return;
     setNotice(null);
+    setUploading(null);
     try {
-      const job = await uploadBook(file, rights, { mode: "prepare", ocrLang: "en", correct: false });
+      const job = await uploadBook(file, rights, { mode: "prepare", ocrLang: "en", correct: false }, setUploading);
+      setUploading(false);
       setPrep(job);
       setPrepDone(null);
       setFile(null);
       setRights(false);
     } catch (e) {
+      setUploading(false);
       fail(e);
     }
   }
@@ -513,6 +519,10 @@ export default function PlaygroundPage() {
               </div>
             )}
           </section>
+        ) : uploading !== false && file ? (
+          <section className="pg-upload-box">
+            <UploadProgressBar name={file.name} progress={uploading} />
+          </section>
         ) : (
         <div className="pg-upload-box">
           <div
@@ -574,10 +584,13 @@ export default function PlaygroundPage() {
           </>
         ) : (
           <>
-            <span className="muted">{file ? (rights ? "Listo para preparar" : "Confirma que tienes derechos de uso") : "Elige un PDF"}</span>
+            <span className="muted">{uploading !== false ? "No cierres esta ventana hasta que termine la subida"
+              : file ? (rights ? "Listo para preparar" : "Confirma que tienes derechos de uso") : "Elige un PDF"}</span>
             <span className="pg-spacer" />
-            <button type="button" className="btn secondary" onClick={closeUpload}>Cancelar</button>
-            <button type="button" className="btn" disabled={!file || !rights} onClick={prepareUpload}>Preparar libro</button>
+            <button type="button" className="btn secondary" disabled={uploading !== false} onClick={closeUpload}>Cancelar</button>
+            <button type="button" className="btn" disabled={!file || !rights || uploading !== false} onClick={prepareUpload}>
+              {uploading !== false ? "Subiendo…" : "Preparar libro"}
+            </button>
           </>
         )}
       </div>

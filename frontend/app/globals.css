@@ -230,6 +230,15 @@ input::placeholder { color: var(--color-palette-9); }
 .progress { height: var(--space-5); border-radius: var(--radius-full); background: var(--color-palette-14); overflow: hidden; }
 .progress > div { height: 100%; border-radius: var(--radius-full); background: var(--color-primary); transition: width 400ms; }
 .progress.idle > div { background: var(--color-palette-11); }
+.progress.indeterminate > div { width: 40%; animation: progress-slide 1.2s ease-in-out infinite; }
+@keyframes progress-slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+@media (prefers-reduced-motion: reduce) { .progress.indeterminate > div { width: 100%; animation: none; } }
+/* subida con progreso real (página principal y Playground) */
+.upload-progress { display: grid; gap: var(--space-4); min-width: 0; }
+.upload-progress-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-7); min-width: 0; }
+.upload-progress-head strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--font-weight-600); }
+.upload-progress-head span { flex: none; color: var(--color-palette-7); font-weight: var(--font-weight-600); font-variant-numeric: tabular-nums; }
+.upload-progress > .muted { font-size: var(--font-size-200); font-variant-numeric: tabular-nums; }
 .pct { display: flex; align-items: baseline; gap: var(--space-5); font-size: var(--font-size-500); line-height: var(--font-line-height-9); font-weight: var(--font-weight-600); }
 .pct small { font-size: var(--font-size-200); line-height: var(--font-line-height-5); font-weight: var(--font-weight-400); color: var(--color-text-secondary); }
 .stages { list-style: none; margin: 0; padding: 0; }
@@ -550,7 +559,8 @@ textarea.mono {
 /* vista de subida: el modal se ajusta a su contenido (ancho del formulario y alto automático) */
 .pg-dialog.pg-dialog-upload {
   width: min(calc(var(--layout-upload) + 2 * var(--space-12)), calc(100vw - 2 * var(--space-12)));
-  height: auto; max-height: calc(100vh - 2 * var(--space-12));
+  /* fit-content, no auto: un <dialog> modal es fixed con inset 0 y con auto se estira hasta max-height */
+  height: fit-content; max-height: calc(100vh - 2 * var(--space-12));
 }
 .pg-dialog:focus { outline: none; }
 .pg-dialog[open] { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
@@ -576,7 +586,7 @@ textarea.mono {
 .pg-dialog-side > * { min-width: 0; }
 .pg-dialog-side .alert { padding: var(--space-5) var(--space-7); }
 /* vista de subida a pantalla de modal: dropzone de la portada centrado en el cuerpo */
-.pg-upload-view { display: grid; place-items: center; min-height: 0; overflow: auto; padding: var(--space-12); }
+.pg-upload-view { display: grid; place-items: center; min-height: 0; overflow: auto; padding: var(--space-9) var(--space-12); }
 .pg-upload-box { display: grid; gap: var(--space-9); width: min(100%, var(--layout-upload)); }
 .pg-upload-box .dropzone p { margin: 0; }
 .pg-upload-box .stages li { font-size: var(--font-size-300); line-height: var(--font-line-height-6); }
