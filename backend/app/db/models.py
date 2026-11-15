@@ -166,6 +166,30 @@ class PlaygroundRun(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
+class PlaygroundAttempt(Base):
+    """Historial del playground: cada variante evaluada y cada «Probar en la pág.», con su configuración, su uso
+    (tokens y costo estimado) y su salida. No se sobrescribe: las pruebas posteriores crean otro intento."""
+    __tablename__ = "playground_attempts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("playground_runs.id"), index=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"), index=True)
+    label: Mapped[str] = mapped_column(String(4))
+    kind: Mapped[str] = mapped_column(String(8))  # run | try
+    pages: Mapped[str] = mapped_column(Text)
+    config: Mapped[dict] = mapped_column(JSON, default=dict)  # provider, model, thinking, prompt, prompt_name, prompt_text
+    segments: Mapped[dict] = mapped_column(JSON, default=dict)  # {clave: {output, issues, fit...}}
+    seconds: Mapped[float] = mapped_column(Float, default=0.0)
+    calls: Mapped[int] = mapped_column(Integer, default=0)
+    tokens_in: Mapped[int] = mapped_column(Integer, default=0)
+    tokens_out: Mapped[int] = mapped_column(Integer, default=0)
+    tokens_cache_hit: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float | None] = mapped_column(Float)  # estimado con la tarifa punta; None = desconocido
+    error: Mapped[str | None] = mapped_column(Text)
+    pdf: Mapped[str | None] = mapped_column(String(1024))  # copia de las páginas de este intento
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class StoredFile(Base):
     """Archivo en el almacenamiento S3. Solo se guarda la key; la URL se construye al responder."""
     __tablename__ = "files"

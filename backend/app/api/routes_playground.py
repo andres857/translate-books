@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import playground as pg
-from app.db.models import Job, Page, PlaygroundRun, PromptDraft, Segment
+from app.db.models import Job, Page, PlaygroundAttempt, PlaygroundRun, PromptDraft, Segment
 from app.db.session import get_db
 from app.pipeline.translate import PROMPTS, TAG_RE
 
@@ -326,10 +326,15 @@ def run_page_image(run_id: int, number: int, col: str = "orig", dpi: int = 110, 
         path = res.get("pdf")
     if not path or not Path(path).exists():
         raise HTTPException(409, "El PDF de esta columna todavía se está maquetando.")
+    return _png(path, number, dpi)
+
+
+def _png(path: str, index: int, dpi: int) -> Response:
+    """Renderiza la página `index` (desde 1) de un PDF como PNG."""
     with pymupdf.open(path) as pdf:
-        if not 1 <= number <= len(pdf):
+        if not 1 <= index <= len(pdf):
             raise HTTPException(404, "Esa página no existe.")
-        png = pdf[number - 1].get_pixmap(dpi=max(30, min(dpi, 200))).tobytes("png")
+        png = pdf[index - 1].get_pixmap(dpi=max(30, min(dpi, 200))).tobytes("png")
     return Response(png, media_type="image/png", headers={"Cache-Control": "private, max-age=86400"})
 
 
@@ -411,3 +416,93 @@ def resume_run(run_id: int, db: Session = Depends(get_db)):
         raise HTTPException(400, str(e)) from None
     db.expire_all()
     return _run(_run_or_404(db, run_id))
+
+
+# ------------------------------------------------------------------ historial (agrupado por libro)
+
+def _book_title(job: Job | None) -> str | None:
+    return (job.document.title_es or job.document.title or job.document.original_name) if job else None
+
+
+def _attempt(a: PlaygroundAttempt, detail: bool = False) -> dict:
+    cfg = dict(a.config or {})
+    if not detail:
+        cfg.pop("prompt_text", None)
+    return {"id": a.id, "run_id": a.run_id, "job_id": a.job_id, "label": a.label, "kind": a.kind, "pages": a.pages,
+            "config": cfg, "seconds": a.seconds, "calls": a.calls, "tokens_in": a.tokens_in, "tokens_out": a.tokens_out,
+            "tokens_cache_hit": a.tokens_cache_hit, "cost_usd": a.cost_usd, "error": a.error,
+            "snapshot": bool(a.pdf) and Path(a.pdf).exists(), "blocks": len(a.segments or {}),
+            "created_at": a.created_at.isoformat() if a.created_at else None}
+
+
+def _attempt_or_404(db: Session, attempt_id: int) -> PlaygroundAttempt:
+    a = db.get(PlaygroundAttempt, attempt_id)
+    if not a:
+        raise HTTPException(404, "Intento no encontrado")
+    return a
+
+
+@router.get("/playground/history")
+def history_books(db: Session = Depends(get_db)):
+    """Libros con pruebas en el playground: cuántas, tokens y costo estimado en total, y la fecha de la última."""
+    A = PlaygroundAttempt
+    rows = db.execute(select(A.job_id, func.count(A.id), func.sum(A.tokens_in), func.sum(A.tokens_out),
+                             func.sum(A.cost_usd), func.max(A.created_at)).group_by(A.job_id)).all()
+    jobs = {j.id: j for j in db.scalars(select(Job).where(Job.id.in_([r[0] for r in rows])))}
+    out = [{"job_id": job_id, "book": _book_title(jobs.get(job_id)), "attempts": n, "tokens_in": tin or 0,
+            "tokens_out": tout or 0, "cost_usd": round(cost or 0, 6), "last": last.isoformat() if last else None}
+           for job_id, n, tin, tout, cost, last in rows]
+    return sorted(out, key=lambda b: b["last"] or "", reverse=True)
+
+
+@router.get("/playground/history/{job_id}")
+def history_book(job_id: int, db: Session = Depends(get_db)):
+    attempts = db.scalars(select(PlaygroundAttempt).where(PlaygroundAttempt.job_id == job_id)
+                          .order_by(PlaygroundAttempt.id.desc())).all()
+    votes = {r.id: r.votes or {} for r in db.scalars(select(PlaygroundRun).where(
+        PlaygroundRun.id.in_({a.run_id for a in attempts})))}
+    out = []
+    for a in attempts:
+        d = _attempt(a)
+        rv = votes.get(a.run_id, {})
+        d["won_pages"] = sorted(int(n) for n, v in rv.items() if v == a.label and n.isdigit())
+        out.append(d)
+    return {"job_id": job_id, "book": _book_title(db.get(Job, job_id)), "attempts": out}
+
+
+@router.get("/playground/attempts/{attempt_id}")
+def attempt_detail(attempt_id: int, db: Session = Depends(get_db)):
+    """Configuración completa (con el prompt) y la salida de cada bloque junto a su original."""
+    a = _attempt_or_404(db, attempt_id)
+    run = db.get(PlaygroundRun, a.run_id)
+    job = db.get(Job, a.job_id)
+    pages = pg.parse_pages(a.pages, pg.book_pages(db, job) or 10**6) if job else []
+    rows = pg.segment_rows(db, a.job_id, pages, run.task if run else "translate")
+    entries = a.segments or {}
+    d = _attempt(a, detail=True)
+    d["book"] = _book_title(job)
+    d["task"] = run.task if run else "translate"
+    d["page_list"] = pages
+    d["blocks"] = [{"key": sg.seg_key, "page": n, "block_type": sg.block_type, "source": sg.source_html or sg.source_text,
+                    "output": (entries.get(sg.seg_key) or {}).get("output"),
+                    "warnings": pg.block_warnings(entries.get(sg.seg_key))}
+                   for n, sg in rows if sg.seg_key in entries]
+    return d
+
+
+@router.get("/playground/attempts/{attempt_id}/pages/{number}/image")
+def attempt_page_image(attempt_id: int, number: int, dpi: int = 110, db: Session = Depends(get_db)):
+    """La página tal como la dejó este intento (su copia); sin copia, el PDF actual de la variante."""
+    a = _attempt_or_404(db, attempt_id)
+    job = db.get(Job, a.job_id)
+    pages = pg.parse_pages(a.pages, pg.book_pages(db, job) or 10**6) if job else []
+    if number not in pages:
+        raise HTTPException(404, "Esa página no está en este intento")
+    if a.pdf and Path(a.pdf).exists():
+        return _png(a.pdf, pages.index(number) + 1, dpi)
+    run = db.get(PlaygroundRun, a.run_id)
+    res = next((x for x in (run.results if run else None) or [] if x.get("label") == a.label), None)
+    path = (res or {}).get("pdf")
+    if not path or not Path(path).exists():
+        raise HTTPException(409, "Este intento no tiene PDF maquetado.")
+    return _png(path, number, dpi)

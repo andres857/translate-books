@@ -80,7 +80,7 @@ def test_variant_pdf_page_data_votes_and_try(client, job_id, monkeypatch):
 
     monkeypatch.setattr(rsmod, "make_translator", factory)
     body = {"job_id": job_id, "scope": "pages", "pages": "4-5",
-            "variants": [{"provider": "deepseek", "model": "m"}, {"provider": "fake"}]}
+            "variants": [{"provider": "deepseek", "model": "deepseek-flash"}, {"provider": "fake"}]}
     r = client.post("/api/admin/playground/runs", json=body)
     assert r.status_code == 200, r.text
     run_id = r.json()["id"]
@@ -135,7 +135,7 @@ def test_variant_pdf_page_data_votes_and_try(client, job_id, monkeypatch):
     before = _texts(res_a["pdf"])
     seen.clear()
     r = client.post(f"/api/admin/playground/runs/{run_id}/variants/A/try",
-                    json={"page": 5, "variant": {"provider": "deepseek", "model": "m", "prompt": d["id"]}})
+                    json={"page": 5, "variant": {"provider": "deepseek", "model": "deepseek-flash", "prompt": d["id"]}})
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "queued" and r.json()["trying"] == {"label": "A", "page": 5}
     assert client.post(f"/api/admin/playground/runs/{run_id}/variants/A/try",
@@ -153,7 +153,7 @@ def test_variant_pdf_page_data_votes_and_try(client, job_id, monkeypatch):
     assert client.get(f"/api/admin/playground/runs/{run_id}/pages/5").json()["metrics"]["A"]["stale"] is False
     # misma configuración en la página 4: deja de estar desactualizada
     client.post(f"/api/admin/playground/runs/{run_id}/variants/A/try",
-                json={"page": 4, "variant": {"provider": "deepseek", "model": "m", "prompt": d["id"]}})
+                json={"page": 4, "variant": {"provider": "deepseek", "model": "deepseek-flash", "prompt": d["id"]}})
     _run_queue()
     assert client.get(f"/api/admin/playground/runs/{run_id}").json()["results"][0]["stale_pages"] == []
     assert client.post(f"/api/admin/playground/runs/{run_id}/variants/A/try",
@@ -168,7 +168,7 @@ def test_old_run_without_pdf_is_composed_without_translating(client, job_id, mon
     monkeypatch.setattr(rsmod, "make_translator", lambda rs, prompts=None: Marker("X", calls))
     with SessionLocal() as s:
         run = PlaygroundRun(job_id=job_id, task="translate", scope="page", pages="4",
-                            variants=pg.validate_variants([{"provider": "deepseek", "model": "m"}], "translate", {}),
+                            variants=pg.validate_variants([{"provider": "deepseek", "model": "deepseek-flash"}], "translate", {}),
                             results=[{"label": "A", "segments": {"p004_s001": {"output": "ANTIGUA", "issues": []}},
                                       "seconds": 1, "calls": 1, "error": None}], status="done")
         s.add(run)
@@ -225,7 +225,7 @@ def test_prepare_mode_extracts_without_translating(client, sample_pdf, monkeypat
     # ya preparado, la evaluación funciona igual (sin columna de producción)
     no_key["on"] = False
     run = client.post("/api/admin/playground/runs", json={"job_id": jid, "scope": "page", "pages": "4",
-                                                          "variants": [{"provider": "deepseek", "model": "m"}]}).json()
+                                                          "variants": [{"provider": "deepseek", "model": "deepseek-flash"}]}).json()
     _run_queue()
     detail = client.get(f"/api/admin/playground/runs/{run['id']}").json()
     assert detail["status"] == "done" and detail["production"] is False and detail["results"][0]["composed"]
@@ -233,3 +233,52 @@ def test_prepare_mode_extracts_without_translating(client, sample_pdf, monkeypat
     page = client.get(f"/api/admin/playground/runs/{run['id']}/pages/4").json()
     assert set(page["metrics"]) == {"A"}
     assert client.get(f"/api/admin/playground/runs/{run['id']}/pages/4/image?col=prod").status_code == 409
+
+
+def test_history_keeps_every_attempt_grouped_by_book(client, job_id, monkeypatch):
+    """Cada variante evaluada y cada «Probar en la pág.» queda en el historial con su configuración, su uso y su
+    salida; una prueba posterior no pisa la salida (ni la copia del PDF) de la anterior."""
+    marks = {"m": "PRIMERA"}
+    monkeypatch.setattr(rsmod, "make_translator", lambda rs, prompts=None: Marker(marks["m"], []))
+    r = client.post("/api/admin/playground/runs", json={
+        "job_id": job_id, "scope": "page", "pages": "4",
+        "variants": [{"provider": "deepseek", "model": "deepseek-flash", "thinking": "disabled"}]})
+    run_id = r.json()["id"]
+    _run_queue()
+    marks["m"] = "SEGUNDA"
+    r = client.post(f"/api/admin/playground/runs/{run_id}/variants/A/try",
+                    json={"page": 4, "variant": {"provider": "deepseek", "model": "deepseek-v4-pro", "thinking": "high"}})
+    assert r.status_code == 200, r.text
+    _run_queue()
+
+    books = client.get("/api/admin/playground/history").json()
+    book = next(b for b in books if b["job_id"] == job_id)
+    assert book["book"] and book["attempts"] >= 2 and book["tokens_in"] > 0
+
+    hist = client.get(f"/api/admin/playground/history/{job_id}").json()
+    mine = [a for a in hist["attempts"] if a["run_id"] == run_id]
+    assert [a["kind"] for a in mine] == ["try", "run"]  # la más nueva primero
+    tried, first = mine
+    assert first["config"]["model"] == "deepseek-flash" and tried["config"]["model"] == "deepseek-v4-pro"
+    assert tried["pages"] == "4" and "prompt_text" not in tried["config"]
+    assert first["snapshot"] and tried["snapshot"]
+    # la prueba guarda solo su propio uso (no el acumulado de la variante)
+    assert tried["calls"] >= 1 and tried["tokens_in"] == 10 * tried["calls"]
+
+    d1 = client.get(f"/api/admin/playground/attempts/{first['id']}").json()
+    d2 = client.get(f"/api/admin/playground/attempts/{tried['id']}").json()
+    assert d1["blocks"] and all(b["output"].startswith("PRIMERA") for b in d1["blocks"] if b["output"])
+    assert all(b["output"].startswith("SEGUNDA") for b in d2["blocks"] if b["output"])
+    assert "prompt_text" in d2["config"] and d2["page_list"] == [4]
+
+    # la copia del primer intento conserva su salida aunque la prueba rehízo la página en el PDF de la variante
+    from app.db.models import PlaygroundAttempt
+    from app.db.session import SessionLocal
+
+    with SessionLocal() as s:
+        assert "PRIMERA" in _texts(s.get(PlaygroundAttempt, first["id"]).pdf)[0]
+        assert "SEGUNDA" in _texts(s.get(PlaygroundAttempt, tried["id"]).pdf)[0]
+    img = client.get(f"/api/admin/playground/attempts/{first['id']}/pages/4/image?dpi=40")
+    assert img.status_code == 200 and img.content[:4] == b"\x89PNG"
+    assert client.get(f"/api/admin/playground/attempts/{first['id']}/pages/5/image").status_code == 404
+    assert client.get("/api/admin/playground/attempts/999999").status_code == 404

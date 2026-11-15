@@ -4,7 +4,7 @@
    razonamiento y prompt) y «Probar en la pág. N»; con el original o producción, el resumen de la evaluación. */
 import { useEffect, useState } from "react";
 import {
-  createDraft, updateDraft, type PlaygroundRun, type PlaygroundTask, type PromptDraft, type Provider, type RunPage,
+  createDraft, DEEPSEEK_MODELS, fmtUsd, updateDraft, type PlaygroundRun, type PlaygroundTask, type PromptDraft, type Provider, type RunPage,
   type VariantInput, type VariantResult,
 } from "@/lib/api";
 import { blockId, DEFAULTS, fmtN, plain, THINKING, variantName, type ColId, type LocalVariant } from "./shared";
@@ -37,7 +37,7 @@ interface Props {
 }
 
 function cost(r: VariantResult): string {
-  return r.cost_usd === null ? "sin tarifa" : `$${r.cost_usd.toFixed(4)}`;
+  return fmtUsd(r.cost_usd);
 }
 
 /** Fila de métrica con una celda por columna; resalta el mejor valor de la página y apaga el peor. */
@@ -72,6 +72,7 @@ export function Panel(p: Props) {
   const [draftName, setDraftName] = useState("");
   const [draftText, setDraftText] = useState("");
   const taskDrafts = p.drafts.filter((d) => d.task === task);
+  const modelValue = variant?.model && variant.model in DEEPSEEK_MODELS ? variant.model : "deepseek-flash";
   const draft = variant && typeof variant.prompt === "number" ? taskDrafts.find((d) => d.id === variant.prompt) ?? null : null;
 
   useEffect(() => { setEditing(false); }, [col]);
@@ -133,8 +134,9 @@ export function Panel(p: Props) {
               <>
                 <label className="control">
                   Modelo
-                  <input value={variant.model ?? ""} list="pg-models" onChange={(e) => p.onChange({ model: e.target.value })} />
-                  <datalist id="pg-models"><option value="deepseek-flash" /><option value="deepseek-pro" /></datalist>
+                  <select value={modelValue} onChange={(e) => p.onChange({ model: e.target.value })}>
+                    {Object.entries(DEEPSEEK_MODELS).map(([m, t]) => <option key={m} value={m}>{t}</option>)}
+                  </select>
                 </label>
                 <label className="control">
                   Razonamiento

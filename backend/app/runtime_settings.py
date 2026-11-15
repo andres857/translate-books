@@ -17,6 +17,15 @@ from app.config import get_settings
 
 PROVIDERS = ("deepseek", "fake")
 THINKING_LEVELS = ("disabled", "low", "high", "max")
+# IDs que acepta la API de chat de DeepSeek (api-docs.deepseek.com, nov. 2026)
+DEEPSEEK_MODELS = ("deepseek-flash", "deepseek-v4-pro")
+# nombres antiguos o erróneos que se guardaron en algún momento -> ID vigente
+MODEL_ALIASES = {"deepseek-pro": "deepseek-v4-pro", "deepseek-v4-flash": "deepseek-flash"}
+
+
+def normalize_model(model: str | None) -> str:
+    model = str(model or "").strip()
+    return MODEL_ALIASES.get(model, model) or DEEPSEEK_MODELS[0]
 SECRETS = ("deepseek_api_key",)
 _lock = threading.Lock()
 
@@ -34,6 +43,7 @@ class RuntimeSettings:
         key = data.pop("deepseek_api_key")
         data["deepseek_key_set"] = bool(key)
         data["deepseek_key_hint"] = key[-4:] if len(key) >= 8 else ""
+        data["deepseek_models"] = list(DEEPSEEK_MODELS)
         return data
 
     @property
@@ -69,6 +79,7 @@ def load() -> RuntimeSettings:
     for key, value in stored.items():
         if key in names:  # claves de modos retirados (p. ej. claude_*) se ignoran
             setattr(current, key, value)
+    current.deepseek_model = normalize_model(current.deepseek_model)
     if current.provider not in PROVIDERS:  # ajustes guardados con el modo de suscripción de Claude, ya retirado
         current.provider = "deepseek"
     return current
@@ -79,6 +90,8 @@ def validate(rs: RuntimeSettings) -> None:
         raise ValueError("Modo de traducción no válido")
     if rs.deepseek_thinking not in THINKING_LEVELS:
         raise ValueError("Nivel de razonamiento no válido")
+    if rs.deepseek_model not in DEEPSEEK_MODELS:
+        raise ValueError(f"Modelo no válido. Disponibles: {', '.join(DEEPSEEK_MODELS)}")
     value = rs.deepseek_concurrency
     if not isinstance(value, int) or not 1 <= value <= 32:
         raise ValueError("La concurrencia debe estar entre 1 y 32")
@@ -96,6 +109,8 @@ def update(changes: dict) -> RuntimeSettings:
                 value = str(value).strip()
                 if not value:
                     continue
+            if key == "deepseek_model":
+                value = normalize_model(value)
             setattr(current, key, value)
         validate(current)
         path = settings_path()

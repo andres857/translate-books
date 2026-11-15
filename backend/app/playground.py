@@ -19,7 +19,7 @@ from sqlalchemy import func, select, text
 
 from app import runtime_settings
 from app.config import get_settings
-from app.db.models import GlossaryEntry, Job, Page, PlaygroundRun, PromptDraft, Segment
+from app.db.models import GlossaryEntry, Job, Page, PlaygroundAttempt, PlaygroundRun, PromptDraft, Segment
 from app.db.session import SessionLocal
 from app.pipeline.digitize import correct_segments
 from app.pipeline.protect import Protector
@@ -112,7 +112,10 @@ def validate_variants(raw: list[dict], task: str, drafts: dict[int, tuple[str, s
             thinking = v.get("thinking") or "disabled"
             if thinking not in runtime_settings.THINKING_LEVELS:
                 raise ValueError("Nivel de razonamiento no válido")
-            item.update(model=model or "deepseek-flash", thinking=thinking)
+            model = runtime_settings.normalize_model(model)
+            if model not in runtime_settings.DEEPSEEK_MODELS:
+                raise ValueError("Modelo no válido")
+            item.update(model=model, thinking=thinking)
         else:
             item["model"] = "fake"
         prompt = v.get("prompt", "production")
@@ -281,15 +284,18 @@ def is_out_of_balance(e: Exception) -> bool:
     return "402" in str(e) or "insufficient balance" in str(e).lower()
 
 
+USAGE_KEYS = ("seconds", "calls", "tokens_in", "tokens_out", "tokens_cache_hit", "cost_usd")
+
+
 def merge_usage(prev: dict | None, res: dict) -> None:
     """Suma al resultado el uso de los tramos anteriores a una pausa (tiempo, llamadas, tokens y costo)."""
     if not prev:
         return
-    for k in ("seconds", "calls", "tokens_in", "tokens_out"):
+    for k in ("seconds", "calls", "tokens_in", "tokens_out", "tokens_cache_hit"):
         res[k] = round((res.get(k) or 0) + (prev.get(k) or 0), 1) if k == "seconds" else (res.get(k) or 0) + (prev.get(k) or 0)
     if prev.get("calls"):
         res["cost_usd"] = (None if prev.get("cost_usd") is None or res.get("cost_usd") is None and res.get("calls")
-                           else round((prev.get("cost_usd") or 0) + (res.get("cost_usd") or 0), 6))
+                           else round((prev.get("cost_usd") or 0) + (res.get("cost_usd") or 0), 8))
 
 
 def run_variant(v: dict, task: str, rows, ctx: dict, should_stop, on_progress, cache: DictCache | None = None) -> dict:
@@ -299,7 +305,7 @@ def run_variant(v: dict, task: str, rows, ctx: dict, should_stop, on_progress, c
     cache = cache if cache is not None else DictCache()
     started = time.monotonic()
     result = {"label": v["label"], "segments": {}, "seconds": 0.0, "calls": 0, "tokens_in": 0, "tokens_out": 0,
-              "cost_usd": None, "cost_kind": "unknown",
+              "tokens_cache_hit": 0, "cost_usd": 0.0 if v["provider"] == "fake" else None, "cost_kind": "estimate",
               "error": None, "fatal": None}
     rec = None
     try:
@@ -440,6 +446,50 @@ def compose_result(s, run: PlaygroundRun, job: Job, res: dict, pages: list[int],
     return r
 
 
+ATTEMPT_CFG = ("provider", "model", "thinking", "prompt", "prompt_name", "prompt_text")
+
+
+def attempts_dir(run_id: int) -> Path:
+    return run_dir(run_id) / "attempts"
+
+
+def snapshot_pages(src: str | None, dest: Path, pages: list[int]) -> bool:
+    """Copia esas páginas del PDF de la variante (en orden) para que pruebas posteriores no las pisen."""
+    if not src or not Path(src).exists():
+        return False
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with pymupdf.open(src) as pdf, pymupdf.open() as out:
+        for n in pages:
+            if 1 <= n <= len(pdf):
+                out.insert_pdf(pdf, from_page=n - 1, to_page=n - 1)
+        if not len(out):
+            return False
+        out.save(dest, garbage=1, deflate=True)
+    return True
+
+
+def record_attempt(s, run: PlaygroundRun, v: dict, res: dict, pages: list[int], kind: str) -> PlaygroundAttempt | None:
+    """Guarda en el historial una variante evaluada o una prueba de página. Un fallo aquí no rompe la evaluación."""
+    try:
+        cost = 0.0 if v.get("provider") == "fake" else res.get("cost_usd")
+        a = PlaygroundAttempt(run_id=run.id, job_id=run.job_id, label=v["label"], kind=kind, pages=format_pages(pages),
+                              config={k: v.get(k) for k in ATTEMPT_CFG}, segments=res.get("segments") or {},
+                              seconds=res.get("seconds") or 0.0, calls=res.get("calls") or 0,
+                              tokens_in=res.get("tokens_in") or 0, tokens_out=res.get("tokens_out") or 0,
+                              tokens_cache_hit=res.get("tokens_cache_hit") or 0, cost_usd=cost, error=res.get("error"))
+        s.add(a)
+        s.flush()
+        dest = attempts_dir(run.id) / f"{a.id}.pdf"
+        if run.task == "translate" and snapshot_pages(res.get("pdf"), dest, pages):
+            a.pdf = str(dest)
+        s.commit()
+        return a
+    except Exception:  # noqa: BLE001
+        log.exception("Playground %s: no se pudo guardar el intento de %s", run.id, v.get("label"))
+        s.rollback()
+        return None
+
+
 def _cfg(v: dict) -> tuple:
     return tuple(v.get(k) for k in CFG_KEYS)
 
@@ -515,7 +565,7 @@ def execute(run_id: int) -> None:
                 caches[label] = dict(cache.data)
                 prev = usage.get(label)
                 merge_usage(prev, res)
-                usage[label] = {k: res.get(k) for k in ("seconds", "calls", "tokens_in", "tokens_out", "cost_usd")}
+                usage[label] = {k: res.get(k) for k in USAGE_KEYS}
                 run.status = "paused"
                 run.error = f"{res['error']} Lo ya evaluado se conserva: recarga saldo y pulsa «Reanudar»."
                 save()
@@ -526,6 +576,7 @@ def execute(run_id: int) -> None:
             run.results = list(results)  # nueva lista: SQLAlchemy detecta el cambio del JSON
             save()
             compose(len(results) - 1)
+            record_attempt(s, run, v, results[-1], pages, "run")
             run.progress = round(100 * (i + 1) / n, 1)
             save()
             if should_stop():
@@ -582,8 +633,9 @@ def try_page(s, run: PlaygroundRun, job: Job, state: dict, results: list, pages:
         finish(f"La prueba de la variante {label} en la página {page} no se pudo hacer: {res['error']}")
         return
     r = dict(results[i])
-    merge_usage({k: r.get(k) for k in ("seconds", "calls", "tokens_in", "tokens_out", "cost_usd")}, res)
-    r.update({k: res.get(k) for k in ("seconds", "calls", "tokens_in", "tokens_out", "cost_usd")})
+    own = {k: res.get(k) for k in USAGE_KEYS}  # uso de esta prueba sola, para el historial
+    merge_usage({k: r.get(k) for k in USAGE_KEYS}, res)
+    r.update({k: res.get(k) for k in USAGE_KEYS})
     r["segments"] = {**(r.get("segments") or {}), **res["segments"]}
     stale = set(pages) if _cfg(run.variants[i]) != _cfg(v) else set(r.get("stale_pages") or [])
     stale.discard(page)
@@ -595,6 +647,10 @@ def try_page(s, run: PlaygroundRun, job: Job, state: dict, results: list, pages:
     run.results = list(results)
     save()
     compose(i, only=[page])
+    composed = results[i]
+    record_attempt(s, run, v, {**own, "error": res["error"], "pdf": composed.get("pdf"),
+                               "segments": {k: (composed.get("segments") or {}).get(k, o) for k, o in res["segments"].items()}},
+                   [page], "try")
     finish(f"Variante {label}, página {page}: {res['error']}" if res["error"] else None)
 
 

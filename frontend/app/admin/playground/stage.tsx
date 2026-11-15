@@ -5,6 +5,7 @@
 import { useState, type ReactNode } from "react";
 import type { PageBlock, RunPage } from "@/lib/api";
 import { blockId, plain, type ColId } from "./shared";
+import { IconInfo } from "../../components/art";
 
 export interface Column {
   id: ColId;
@@ -13,6 +14,8 @@ export interface Column {
   sub: ReactNode; // insignias y datos de la segunda línea de la cabecera
   image: string | null; // null: no hay PDF que mostrar (ver placeholder)
   placeholder?: { text: string; action?: { label: string; onClick: () => void } };
+  // configuración cambiada sin ejecutar: lo que se ve es de la anterior
+  notice?: { text: string; hint?: string | null; action?: { label: string; onClick: () => void; busy?: boolean } };
 }
 
 interface Props {
@@ -55,6 +58,19 @@ export function Stage({ columns, page, view, hiWarn, selCol, selBlock, onSelect,
               <span className="pg-name" title={c.name}>{c.name}</span>
               <span className="pg-sub">{c.sub}</span>
             </div>
+            {c.notice && (
+              <div className="alert pg-col-notice" role="status">
+                <IconInfo />
+                <div className="stack">
+                  <span>{c.notice.text}</span>
+                  {c.notice.action ? (
+                    <button type="button" className="btn" disabled={c.notice.action.busy} onClick={c.notice.action.onClick}>
+                      {c.notice.action.busy ? "Traduciendo esta página…" : c.notice.action.label}
+                    </button>
+                  ) : c.notice.hint ? <span className="muted">{c.notice.hint}</span> : null}
+                </div>
+              </div>
+            )}
 
             {view === "page" ? (
               c.image && !broken[c.image] ? (

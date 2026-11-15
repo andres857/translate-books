@@ -40,7 +40,17 @@ def test_invalid_values_rejected(store):
         rsmod.update({"provider": "claude"})  # el modo de suscripción de Claude ya no existe
     with pytest.raises(ValueError):
         rsmod.update({"deepseek_thinking": "extremo"})
+    with pytest.raises(ValueError):
+        rsmod.update({"deepseek_model": "gpt-4o"})
     assert not store.exists()
+
+
+def test_model_aliases(store):
+    """El nombre erróneo `deepseek-pro` que ofrecía el playground se lee y se guarda como el ID real."""
+    store.write_text(json.dumps({"deepseek_model": "deepseek-pro"}))
+    assert rsmod.load().deepseek_model == "deepseek-v4-pro"
+    assert rsmod.update({"deepseek_model": "deepseek-v4-flash"}).deepseek_model == "deepseek-flash"
+    assert rsmod.load().public()["deepseek_models"] == list(rsmod.DEEPSEEK_MODELS)
 
 
 def test_old_claude_settings_fall_back_to_deepseek(store):

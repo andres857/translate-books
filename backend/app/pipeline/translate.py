@@ -106,21 +106,36 @@ def render_correct(template: str, lang: str) -> str:
     return template.replace("{lang}", OCR_LANG_NAMES.get(lang, "inglés"))
 
 
+# Tarifa de DeepSeek en USD por millón de tokens, en hora punta (la más cara; fuera de ella es la mitad).
+# api-docs.deepseek.com/quick_start/pricing, nov. 2026: (entrada en caché, entrada sin caché, salida)
+DEEPSEEK_PRICES = {"deepseek-flash": (0.006, 0.30, 1.20), "deepseek-v4-pro": (0.044, 1.32, 3.96)}
+
+
+def estimate_cost(model: str, tokens_in: int, cache_hit: int, tokens_out: int) -> float | None:
+    """Costo estimado de una llamada (tarifa punta). None si el modelo no tiene tarifa conocida."""
+    price = DEEPSEEK_PRICES.get(model)
+    if price is None:
+        return None
+    hit = min(int(cache_hit or 0), int(tokens_in or 0))
+    return (hit * price[0] + (int(tokens_in or 0) - hit) * price[1] + int(tokens_out or 0) * price[2]) / 1e6
+
+
 class UsageMeter:
     """Suma llamadas, tokens y costo de un traductor (playground). Un costo desconocido no es cero: si alguna
     llamada no lo informa, el total queda en None."""
 
     def __init__(self):
         self._lock = threading.Lock()
-        self.calls = self.tokens_in = self.tokens_out = 0
+        self.calls = self.tokens_in = self.tokens_out = self.tokens_cache_hit = 0
         self.cost_usd = 0.0
         self.cost_unknown = False
 
-    def add(self, tokens_in: int = 0, tokens_out: int = 0, cost_usd: float | None = None) -> None:
+    def add(self, tokens_in: int = 0, tokens_out: int = 0, cost_usd: float | None = None, cache_hit: int = 0) -> None:
         with self._lock:
             self.calls += 1
             self.tokens_in += int(tokens_in or 0)
             self.tokens_out += int(tokens_out or 0)
+            self.tokens_cache_hit += int(cache_hit or 0)
             if cost_usd is None:
                 self.cost_unknown = True
             else:
@@ -129,7 +144,8 @@ class UsageMeter:
     def snapshot(self) -> dict:
         with self._lock:
             return {"calls": self.calls, "tokens_in": self.tokens_in, "tokens_out": self.tokens_out,
-                    "cost_usd": None if self.cost_unknown or not self.calls else round(self.cost_usd, 6)}
+                    "tokens_cache_hit": self.tokens_cache_hit,
+                    "cost_usd": None if self.cost_unknown or not self.calls else round(self.cost_usd, 8)}
 
 
 class PromptMixin:
@@ -141,9 +157,9 @@ class PromptMixin:
     def prompt(self, task: str) -> str:
         return (self.prompts or {}).get(task) or DEFAULT_PROMPTS[task]
 
-    def _measure(self, tokens_in=0, tokens_out=0, cost_usd=None) -> None:
+    def _measure(self, tokens_in=0, tokens_out=0, cost_usd=None, cache_hit=0) -> None:
         if self.meter is not None:
-            self.meter.add(tokens_in, tokens_out, cost_usd)
+            self.meter.add(tokens_in, tokens_out, cost_usd, cache_hit)
 
 
 class Translator(Protocol):
@@ -179,6 +195,10 @@ class TruncatedError(RuntimeError):
     """La respuesta se cortó por longitud: repetir igual no sirve; hay que pedir menos de una vez."""
 
 
+# tokens extra de salida para el razonamiento según el nivel (la API admite hasta 384K de salida)
+REASONING_BUDGET = {"low": 16000, "high": 32000, "max": 120000}
+
+
 class FatalAPIError(RuntimeError):
     """Error no recuperable: llave inválida, saldo insuficiente, modelo inexistente."""
 
@@ -212,7 +232,8 @@ class DeepSeekTranslator(PromptMixin):
         else:
             body["thinking"] = {"type": "enabled"}
             body["reasoning_effort"] = thinking
-            body["max_tokens"] = max_tokens + 16000  # el razonamiento también consume tokens de salida
+            # el razonamiento también consume tokens de salida; es solo un tope (se paga lo generado)
+            body["max_tokens"] = max_tokens + REASONING_BUDGET.get(thinking, 32000)
         resp = self._client.post("/chat/completions", json=body)
         if resp.status_code in (429, 500, 502, 503, 504):
             raise TranslationAPIError(f"DeepSeek respondió {resp.status_code}")
@@ -221,7 +242,9 @@ class DeepSeekTranslator(PromptMixin):
             raise FatalAPIError(f"DeepSeek respondió {resp.status_code}: {resp.text[:300]}")
         data = resp.json()
         usage = data.get("usage") or {}
-        self._measure(usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0), None)  # sin tarifa: costo desconocido
+        tin, tout = usage.get("prompt_tokens", 0) or 0, usage.get("completion_tokens", 0) or 0
+        hit = usage.get("prompt_cache_hit_tokens", 0) or 0
+        self._measure(tin, tout, estimate_cost(self.model, tin, hit, tout), hit)  # estimado con la tarifa punta
         content = data["choices"][0]["message"]["content"] or ""
         if data["choices"][0].get("finish_reason") == "length":
             raise TruncatedError("respuesta truncada por longitud")

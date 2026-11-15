@@ -171,7 +171,7 @@ h3 { font-size: var(--font-size-300); line-height: var(--font-line-height-6); fo
 .form-grid { display: grid; gap: var(--space-9); grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); align-items: end; }
 .form-grid > .full { grid-column: 1 / -1; }
 label.control { display: grid; gap: var(--space-3); font-size: var(--font-size-200); line-height: var(--font-line-height-5); font-weight: var(--font-weight-500); color: var(--color-palette-6); }
-input[type="text"], input[type="search"], input[type="password"], input:not([type]), select, textarea {
+input[type="text"], input[type="search"], input[type="password"], input[type="number"], input:not([type]), select, textarea {
   width: 100%; min-height: var(--layout-control); padding: 0 var(--space-5);
   background: var(--color-surface); color: var(--color-palette-2);
   border: var(--layout-line) solid var(--color-palette-13); border-radius: var(--radius-2);
@@ -474,6 +474,35 @@ textarea.mono {
 .pg-ellipsis { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pg-col.on .pg-col-head { box-shadow: inset 0 calc(-1 * var(--layout-focus)) 0 var(--color-palette-7); }
 .pg-col.on .pg-col-head .variant-tag:not(.plain) { background: var(--color-primary); color: var(--color-surface); }
+/* ---------- historial del playground */
+.hist { display: grid; grid-template-columns: var(--layout-dialog-side) minmax(0, 1fr); gap: var(--space-12); align-items: start; }
+.hist-side { display: grid; gap: var(--space-9); position: sticky; top: var(--space-9); }
+.hist-side-head { display: flex; align-items: baseline; justify-content: space-between; padding: 0 var(--space-7); }
+.hist-book { display: grid; gap: var(--space-1); }
+.hist-book .muted { padding: 0; font-weight: var(--font-weight-400); }
+.hist-main { display: grid; gap: var(--space-9); min-width: 0; }
+td.nowrap { white-space: nowrap; }
+td .badge { margin-left: var(--space-4); }
+.hist-row { cursor: pointer; transition: background var(--layout-speed); }
+.hist-row:hover { background: var(--color-palette-17); }
+.hist-row[aria-selected="true"] { background: var(--color-palette-16); box-shadow: inset var(--layout-focus) 0 0 var(--color-primary); }
+.hist-detail { display: grid; gap: var(--space-9); }
+.hist-config { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: var(--space-3) var(--space-9); }
+.hist-config dt { color: var(--color-text-secondary); font-size: var(--font-size-200); line-height: var(--font-line-height-5); }
+.hist-config dd { margin: 0; font-size: var(--font-size-200); line-height: var(--font-line-height-5); }
+.hist-prompt summary { cursor: pointer; font-weight: var(--font-weight-500); }
+.hist-prompt .code { margin-top: var(--space-5); white-space: pre-wrap; }
+.hist-pages { display: grid; gap: var(--space-7); }
+.hist-page { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-9); align-items: start; }
+.hist-sheet { position: sticky; top: var(--space-9); }
+.hist-sheet img { display: block; width: 100%; height: auto; }
+.hist-main td.wrap { min-width: var(--layout-scope-select); }
+@media (max-width: 900px) {
+  .hist, .hist-page { grid-template-columns: minmax(0, 1fr); }
+  .hist-side { position: static; }
+}
+.pg-col-notice { padding: var(--space-5) var(--space-7); }
+.pg-col-notice .stack { gap: var(--space-3); justify-items: start; }
 .pg-col.on .pg-sheet { box-shadow: 0 0 0 var(--layout-focus) var(--color-palette-7), var(--shadow-4); }
 
 /* página: imagen real del PDF con la capa de bloques encima */

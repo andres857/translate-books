@@ -88,11 +88,13 @@ def test_scope_limits():
 def test_validate_variants():
     v = pg.validate_variants([{"provider": "deepseek", "model": "deepseek-pro", "thinking": "high"}], "translate", {})
     assert v[0]["label"] == "A" and v[0]["prompt"] == "production" and v[0]["prompt_text"] is None
-    assert v[0]["model"] == "deepseek-pro" and v[0]["thinking"] == "high"
+    assert v[0]["model"] == "deepseek-v4-pro" and v[0]["thinking"] == "high"
     with pytest.raises(ValueError):
         pg.validate_variants([{"provider": "fake"}] * 5, "translate", {})
     with pytest.raises(ValueError):
         pg.validate_variants([{"provider": "gpt"}], "translate", {})
+    with pytest.raises(ValueError):
+        pg.validate_variants([{"provider": "deepseek", "model": "gpt-4o"}], "translate", {})
     with pytest.raises(ValueError):
         pg.validate_variants([{"provider": "claude"}], "translate", {})  # modo retirado
     with pytest.raises(ValueError):
@@ -117,7 +119,7 @@ def test_run_uses_stored_protection_and_isolated_cache(db, book, monkeypatch):
     monkeypatch.setattr(rsmod, "make_translator", factory)
     with db() as s:
         before = s.scalar(select(func.count()).select_from(TranslationCache))
-        variants = pg.validate_variants([{"provider": "fake"}, {"provider": "deepseek", "model": "m",
+        variants = pg.validate_variants([{"provider": "fake"}, {"provider": "deepseek", "model": "deepseek-flash",
                                           "prompt": 1}], "translate", {1: ("translate", "BORRADOR")})
         run = PlaygroundRun(job_id=book, task="translate", pages="2-3", variants=variants, results=[])
         s.add(run)
@@ -147,7 +149,7 @@ def test_failing_variant_does_not_break_others(db, book, monkeypatch):
     monkeypatch.setattr(rsmod, "make_translator", factory)
     with db() as s:
         run = PlaygroundRun(job_id=book, task="translate", pages="1",
-                            variants=pg.validate_variants([{"provider": "deepseek", "model": "m"}, {"provider": "fake"}],
+                            variants=pg.validate_variants([{"provider": "deepseek", "model": "deepseek-flash"}, {"provider": "fake"}],
                                                           "translate", {}), results=[])
         s.add(run)
         s.commit()
@@ -184,7 +186,7 @@ def test_no_balance_pauses_run_and_resume_skips_done_blocks(db, book, monkeypatc
     monkeypatch.setattr(pg, "BATCH_ITEMS", 1)  # un bloque por llamada para cortar a mitad
     with db() as s:
         run = PlaygroundRun(job_id=book, task="translate", scope="book", pages="1-3",
-                            variants=pg.validate_variants([{"provider": "deepseek", "model": "m"}] * 2,
+                            variants=pg.validate_variants([{"provider": "deepseek", "model": "deepseek-flash"}] * 2,
                                                           "translate", {}), results=[])
         s.add(run)
         s.commit()

@@ -118,7 +118,18 @@ export default function PlaygroundPage() {
         const runParam = Number(params.get("run"));
         if (runParam) {
           setScopeOpen(false);
-          getRun(runParam).then(show).catch(() => setScopeOpen(true));
+          // «Reusar configuración» desde el historial: se aplica a esa variante y queda como modificada
+          let use: (Partial<VariantInput> & { label?: string }) | null = null;
+          try { use = JSON.parse(params.get("use") ?? "null"); } catch { use = null; }
+          getRun(runParam).then((r) => {
+            show(r);
+            if (use?.label) {
+              const { label, ...cfg } = use;
+              setVariants((vs) => vs.map((v) => (v.label === label ? { ...v, ...cfg } : v)));
+              setCol(label);
+              setPanelOpen(true);
+            }
+          }).catch(() => setScopeOpen(true));
         }
         const draft = d.find((x) => x.id === Number(params.get("draft")));
         const wanted = draft?.task ?? (params.get("task") as PlaygroundTask | null);
@@ -353,10 +364,10 @@ export default function PlaygroundPage() {
   }
 
   const selVariant = variants.find((v) => v.label === col) ?? null;
-  function tryPage() {
-    if (!run || !selVariant || pageNo === null) return;
+  function tryPage(target: LocalVariant | null = selVariant) {
+    if (!run || !target || pageNo === null) return;
     setNotice(null);
-    act(() => tryVariantPage(run.id, selVariant.label, pageNo, toInput(selVariant)));
+    act(() => tryVariantPage(run.id, target.label, pageNo, toInput(target)));
   }
 
   // ------------------------------------------------------------------ columnas
@@ -383,6 +394,8 @@ export default function PlaygroundPage() {
       const res = rv ? resultFor(v.label) : null;
       const m = page?.metrics[v.label];
       const modified = !!rv && !sameConfig(v, rv);
+      const trying = active && run?.trying?.label === v.label;
+      const canTry = !!run && run.status === "done" && !!res && pageNo !== null;
       let placeholder: Column["placeholder"];
       if (!run || !rv) placeholder = { text: "Sin ejecutar: pulsa «Ejecutar» para evaluar esta variante." };
       else if (!res) {
@@ -401,7 +414,13 @@ export default function PlaygroundPage() {
         action: { label: "Maquetar PDF", onClick: () => act(() => composeRun(run.id)) },
       };
       columns.push({
-        id: v.label, tag: v.label, name: variantName(v),
+        // con la configuración cambiada, la cabecera dice con qué se generó lo que se ve
+        id: v.label, tag: v.label, name: modified && rv ? variantName(rv) : variantName(v),
+        notice: modified && res ? {
+          text: `Configuración cambiada a ${variantName(v)}${String(v.prompt) !== String(rv!.prompt) ? ` · ${draftName(v.prompt)}` : ""}. Lo que ves es de la anterior.`,
+          hint: canTry || trying ? null : active ? "Espera a que termine la evaluación en curso." : "La evaluación tiene que estar terminada.",
+          action: canTry || trying ? { label: `Volver a traducir la pág. ${pageNo}`, onClick: () => tryPage(v), busy: trying } : undefined,
+        } : undefined,
         sub: (
           <>
             {page?.vote === v.label && <span className="badge info">Mejor</span>}
@@ -805,7 +824,7 @@ export default function PlaygroundPage() {
             task={task} drafts={drafts} productionPrompt={prompts[task]}
             onDraftSaved={(d) => setDrafts((ds) => [...ds.filter((x) => x.id !== d.id), d].sort((a, b) => a.id - b.id))}
             onError={(text) => setNotice({ kind: "error", text })}
-            tryState={tryState} onTry={tryPage} run={run} pageCount={pageList.length} />
+            tryState={tryState} onTry={() => tryPage()} run={run} pageCount={pageList.length} />
         )}
       </div>
     </main>

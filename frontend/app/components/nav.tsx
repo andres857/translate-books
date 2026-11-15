@@ -5,7 +5,7 @@ import { useEffect, useState, type ComponentType, type SVGProps } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { getSettings, methodLabel, SETTINGS_EVENT } from "@/lib/api";
-import { IconChevron, IconCloud, IconFlask, IconLayers, IconSettings, IconText, IconUpload } from "./art";
+import { IconChevron, IconCloud, IconFlask, IconHistory, IconLayers, IconSettings, IconText, IconUpload } from "./art";
 
 type Item = { href: string; label: string; short: string; Icon: ComponentType<SVGProps<SVGSVGElement>>; match: (p: string) => boolean };
 
@@ -26,7 +26,9 @@ const SECTIONS: { id: string; title: string; items: Item[] }[] = [
       { href: "/admin/prompts", label: "Prompts", short: "Prompts", Icon: IconText,
         match: (p) => p.startsWith("/admin/prompts") },
       { href: "/admin/playground", label: "Playground", short: "Probar", Icon: IconFlask,
-        match: (p) => p.startsWith("/admin/playground") },
+        match: (p) => p.startsWith("/admin/playground") && !p.startsWith("/admin/playground/history") },
+      { href: "/admin/playground/history", label: "Historial", short: "Historial", Icon: IconHistory,
+        match: (p) => p.startsWith("/admin/playground/history") },
       { href: "/admin/settings", label: "Configuración", short: "Ajustes", Icon: IconSettings,
         match: (p) => p.startsWith("/admin/settings") || p.startsWith("/settings") },
     ],

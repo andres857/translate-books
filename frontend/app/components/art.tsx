@@ -34,6 +34,9 @@ export const IconWand = (p: P) => (
 export const IconWarn = (p: P) => (
   <svg {...icon(p)}><path d="M12 3 2 20h20L12 3Z" /><path d="M12 10v4M12 17h.01" /></svg>
 );
+export const IconHistory = (p: P) => (
+  <svg {...icon(p)}><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2" /></svg>
+);
 export const IconHourglass = (p: P) => (
   <svg {...icon(p)}><path d="M6 3h12M6 21h12M7 3v3.5c0 2 5 3.5 5 5.5s-5 3.5-5 5.5V21M17 3v3.5c0 2-5 3.5-5 5.5s5 3.5 5 5.5V21" /></svg>
 );

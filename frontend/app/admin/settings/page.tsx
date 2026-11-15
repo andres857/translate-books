@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  getSettings, saveSettings, SETTINGS_EVENT, testSettings, type SettingsChanges, type TranslationSettings,
+  DEEPSEEK_MODELS, getSettings, saveSettings, SETTINGS_EVENT, testSettings, THINKING_LEVELS,
+  type SettingsChanges, type TranslationSettings,
 } from "@/lib/api";
 import { IconCheck, IconInfo, IconWarn } from "../../components/art";
 
@@ -22,6 +23,7 @@ export default function AdminSettingsPage() {
         setCurrent(s);
         setForm({
           provider: s.provider, deepseek_model: s.deepseek_model, deepseek_thinking: s.deepseek_thinking,
+          deepseek_concurrency: s.deepseek_concurrency,
         });
       })
       .catch((e) => setNotice({ kind: "error", text: (e as Error).message }));
@@ -75,6 +77,8 @@ export default function AdminSettingsPage() {
   }
 
   const provider = form.provider ?? current.provider;
+  const models = current.deepseek_models?.length ? current.deepseek_models : Object.keys(DEEPSEEK_MODELS);
+  const model = form.deepseek_model ?? current.deepseek_model;
 
   return (
     <main>
@@ -108,7 +112,10 @@ export default function AdminSettingsPage() {
               </label>
               <label className="control">
                 Modelo
-                <input value={form.deepseek_model ?? ""} onChange={(e) => set({ deepseek_model: e.target.value })} />
+                <select value={model} onChange={(e) => set({ deepseek_model: e.target.value })}>
+                  {models.map((m) => <option key={m} value={m}>{DEEPSEEK_MODELS[m] ?? m}</option>)}
+                  {!models.includes(model) && <option value={model}>{model} (no válido)</option>}
+                </select>
               </label>
               <label className="control">
                 Razonamiento
@@ -116,11 +123,16 @@ export default function AdminSettingsPage() {
                   value={form.deepseek_thinking}
                   onChange={(e) => set({ deepseek_thinking: e.target.value as TranslationSettings["deepseek_thinking"] })}
                 >
-                  <option value="disabled">Desactivado (más rápido)</option>
-                  <option value="low">Bajo</option>
-                  <option value="high">Alto (más cuidadoso)</option>
-                  <option value="max">Máximo</option>
+                  {Object.entries(THINKING_LEVELS).map(([k, t]) => <option key={k} value={k}>{t}</option>)}
                 </select>
+              </label>
+              <label className="control">
+                Llamadas simultáneas
+                <input
+                  type="number" min={1} max={32} step={1}
+                  value={form.deepseek_concurrency ?? ""}
+                  onChange={(e) => set({ deepseek_concurrency: e.target.value === "" ? undefined : Number(e.target.value) })}
+                />
               </label>
             </>
           )}

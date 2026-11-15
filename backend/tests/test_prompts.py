@@ -63,13 +63,24 @@ def test_deepseek_default_and_override_prompt(monkeypatch):
     assert sent[-1]["messages"][0]["content"] == "PROMPT BORRADOR"
 
 
-def test_deepseek_meter_counts_tokens_cost_unknown(monkeypatch):
-    t, _ = deepseek_capture(monkeypatch, usage={"prompt_tokens": 100, "completion_tokens": 40})
+def test_deepseek_meter_counts_tokens_and_estimates_cost(monkeypatch):
+    t, _ = deepseek_capture(monkeypatch, usage={"prompt_tokens": 100, "completion_tokens": 40,
+                                                "prompt_cache_hit_tokens": 60})
+    t.model = "deepseek-flash"
     t.meter = tr.UsageMeter()
     t.translate_batch(ITEMS, {})
     t.translate_batch(ITEMS, {})
     m = t.meter.snapshot()
-    assert m == {"calls": 2, "tokens_in": 200, "tokens_out": 80, "cost_usd": None}
+    # por llamada: 60 en caché × 0,006 + 40 sin caché × 0,30 + 40 de salida × 1,20 (USD por millón)
+    per_call = (60 * 0.006 + 40 * 0.30 + 40 * 1.20) / 1e6
+    assert m == {"calls": 2, "tokens_in": 200, "tokens_out": 80, "tokens_cache_hit": 120,
+                 "cost_usd": pytest.approx(2 * per_call)}
+
+
+def test_estimate_cost_models():
+    assert tr.estimate_cost("deepseek-v4-pro", 1_000_000, 0, 1_000_000) == pytest.approx(1.32 + 3.96)
+    assert tr.estimate_cost("deepseek-flash", 1_000_000, 1_000_000, 0) == pytest.approx(0.006)
+    assert tr.estimate_cost("otro", 10, 0, 10) is None  # sin tarifa: costo desconocido, no cero
 
 
 def test_correct_override_renders_lang(tmp_path, monkeypatch):

@@ -1,4 +1,5 @@
 /* Utilidades de la mesa del Playground: textos, etiquetas, páginas y métricas. */
+import { MODEL_ALIASES } from "@/lib/api";
 import type { PageBlock, PageCell, PageMetrics, PageSegments, RunPage, Variant, VariantInput } from "@/lib/api";
 
 export const MAX_VARIANTS = 4;
@@ -36,15 +37,20 @@ export function variantName(v: Pick<VariantInput, "provider" | "model" | "thinki
   return "Prueba sin API";
 }
 
+/** ID vigente del modelo (evaluaciones viejas guardaron `deepseek-pro`, que la API no acepta). */
+export function modelId(model: string | null | undefined): string {
+  return (model && (MODEL_ALIASES[model] ?? model)) || "deepseek-flash";
+}
+
 export function sameConfig(a: VariantInput, b: Variant | VariantInput): boolean {
-  const norm = (v: VariantInput) => [v.provider, v.provider === "deepseek" ? v.model || "deepseek-flash" : "fake",
+  const norm = (v: VariantInput) => [v.provider, v.provider === "deepseek" ? modelId(v.model) : "fake",
     v.provider === "deepseek" ? v.thinking || "disabled" : "", String(v.prompt ?? "production")].join("|");
   return norm(a) === norm(b);
 }
 
 export function toInput(v: Variant | LocalVariant): VariantInput {
   return v.provider === "deepseek"
-    ? { provider: "deepseek", model: v.model, thinking: v.thinking, prompt: v.prompt }
+    ? { provider: "deepseek", model: modelId(v.model), thinking: v.thinking, prompt: v.prompt }
     : { provider: "fake", prompt: v.prompt };
 }
 
