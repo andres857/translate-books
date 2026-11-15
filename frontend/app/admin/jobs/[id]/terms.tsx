@@ -70,7 +70,7 @@ export function Terms({ documentId }: { documentId: number }) {
               <option value="all">Todos los libros</option>
             </select>
           </label>
-          <button className="btn lg" type="submit" disabled={!g.source.trim() || !g.target.trim()}><IconPlus /> Añadir</button>
+          <button className="btn" type="submit" disabled={!g.source.trim() || !g.target.trim()}><IconPlus /> Añadir</button>
         </form>
         <div className="table-wrap">
           <table>
@@ -115,7 +115,7 @@ export function Terms({ documentId }: { documentId: number }) {
               <option value="all">Todos los libros</option>
             </select>
           </label>
-          <button className="btn lg" type="submit" disabled={t.term.trim().length < 2}><IconPlus /> Añadir</button>
+          <button className="btn" type="submit" disabled={t.term.trim().length < 2}><IconPlus /> Añadir</button>
         </form>
         <div className="table-wrap">
           <table>

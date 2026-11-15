@@ -16,7 +16,7 @@ from app.db.models import Document, GlossaryEntry, Job, Page, ProtectedTerm, Seg
 from app.db.session import SessionLocal
 from app.pipeline.digitize import DigitizeOptions, run_digitize
 from app.pipeline.epub import build_epub_for_job
-from app.pipeline.runner import Cancelled, PipelineOptions, recompose_page, run_pipeline
+from app.pipeline.runner import Cancelled, PipelineOptions, prepare_book, recompose_page, run_pipeline
 from app import playground, runtime_settings
 from app.pipeline.translate import FatalAPIError
 
@@ -26,6 +26,8 @@ log = logging.getLogger("worker")
 STAGE_WEIGHTS = {"analyze": (0, 4), "ocr": (4, 10), "protect": (10, 12), "translate": (12, 78),
                  "rebuild": (78, 93), "validate": (93, 100)}
 # modo digitalizar (OCR sin traducir); sin corrección con el modelo, la etapa "correct" no aparece
+# modo preparar (Playground): solo análisis, OCR y protección; sin traducir ni maquetar
+PREPARE_WEIGHTS = {"analyze": (0, 40), "ocr": (40, 95), "protect": (95, 100)}
 DIGITIZE_WEIGHTS = {"analyze": (0, 2), "ocr": (2, 60), "correct": (60, 85), "compose": (85, 98),
                     "validate": (98, 100)}
 
@@ -33,14 +35,6 @@ DIGITIZE_WEIGHTS = {"analyze": (0, 2), "ocr": (2, 60), "correct": (60, 85), "com
 def friendly_error(e: Exception) -> str:
     msg = str(e)
     if isinstance(e, FatalAPIError):
-        if "CLAUDE_CLI_MISSING" in msg:
-            return "No se encontró el programa 'claude' en este equipo. Instala Claude Code e inicia sesión."
-        if "CLAUDE_LOGIN" in msg:
-            return ("Claude no tiene la sesión iniciada o el token no es válido. Ejecuta 'claude setup-token' en tu "
-                    "equipo y pega el token en Administración › Configuración (o inicia sesión con 'claude').")
-        if "CLAUDE_QUOTA" in msg:
-            detail = msg.split(":", 1)[1].strip()
-            return "Se agotó el uso de tu suscripción de Claude por ahora. " + (detail[:200] if detail else "")
         if "DEEPSEEK_API_KEY" in msg:
             return "Falta la llave de DeepSeek. Agrégala en Administración › Configuración."
         if "401" in msg:
@@ -111,7 +105,8 @@ def process(job_id: int) -> None:
 
     options = dict(job.options or {})
     digitize = options.get("mode") == "digitize"
-    weights = DIGITIZE_WEIGHTS if digitize else STAGE_WEIGHTS
+    prepare = options.get("mode") == "prepare"
+    weights = DIGITIZE_WEIGHTS if digitize else PREPARE_WEIGHTS if prepare else STAGE_WEIGHTS
 
     def progress(stage: str, done: int, total: int, page: int | None) -> None:
         a, b = weights.get(stage, (0, 100))
@@ -129,7 +124,6 @@ def process(job_id: int) -> None:
         if digitize:
             process_digitize(s, job, rs, options, progress, should_stop)
             return
-        translator = runtime_settings.make_translator(rs)
         terms = {t.term: t.category for t in s.scalars(select(ProtectedTerm).where(
             (ProtectedTerm.document_id.is_(None)) | (ProtectedTerm.document_id == doc.id)))}
         glossary = {g.source: g.target for g in s.scalars(select(GlossaryEntry).where(
@@ -138,6 +132,10 @@ def process(job_id: int) -> None:
                                concurrency=rs.concurrency, batch_chars=st.translation_batch_chars,
                                batch_items=st.translation_batch_max_segments, fonts_dirs=st.fonts_dirs,
                                detect_names=rs.provider != "fake")
+        if prepare:  # sin traductor: preparar no necesita llave ni llama a ningún modelo
+            process_prepare(s, job, terms, opts, progress, should_stop)
+            return
+        translator = runtime_settings.make_translator(rs)
         if options.get("recompose"):
             process_recompose(s, job, options, translator, terms, glossary, opts, progress, should_stop)
             return
@@ -197,6 +195,18 @@ def process_recompose(s, job: Job, options: dict, translator, terms, glossary, o
     job.options = options
     job.status, job.stage, job.progress, job.current_page = "done", "done", 100.0, None
     s.commit()
+
+
+def process_prepare(s, job: Job, terms, opts, progress, should_stop) -> None:
+    """Prepara un libro para el Playground: guarda páginas y bloques (con su protección) sin traducir nada."""
+    log.info("Trabajo %s: preparar para el Playground (sin traducir)", job.id)
+    book = prepare_book(Path(job.document.path), terms, opts, progress, should_stop)
+    save_results(s, job, book.pages)
+    job.document.title = book.title
+    job.status, job.stage, job.progress, job.current_page = "done", "done", 100.0, None
+    s.commit()
+    log.info("Trabajo %s preparado: %s páginas, %s bloques", job.id, len(book.pages),
+             sum(1 for p in book.pages for sg in p.segments if sg.action == "translate"))
 
 
 def process_digitize(s, job: Job, rs, options: dict, progress, should_stop) -> None:

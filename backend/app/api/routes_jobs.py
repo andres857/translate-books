@@ -25,6 +25,9 @@ STAGES = [("upload", "Carga"), ("analyze", "Análisis"), ("ocr", "OCR"), ("prote
 STAGE_INDEX = {k: i for i, (k, _) in enumerate(STAGES)}
 DIGITIZE_STAGES = [("upload", "Carga"), ("analyze", "Análisis"), ("ocr", "OCR"), ("correct", "Corrección"),
                    ("compose", "Maquetación"), ("validate", "Validación"), ("done", "Descarga")]
+# preparar para el Playground: se extrae la información del libro sin traducir nada
+PREPARE_STAGES = [("upload", "Carga"), ("analyze", "Análisis"), ("ocr", "OCR"), ("protect", "Protección"),
+                  ("done", "Listo para evaluar")]
 
 
 def _job_or_404(db: Session, job_id: int) -> Job:
@@ -36,8 +39,10 @@ def _job_or_404(db: Session, job_id: int) -> Job:
 
 def job_status(job: Job) -> dict:
     options = job.options or {}
-    digitize = options.get("mode") == "digitize"
-    stage_list = [st for st in DIGITIZE_STAGES if st[0] != "correct" or options.get("correct")] if digitize else STAGES
+    mode = options.get("mode") if options.get("mode") in ("digitize", "prepare") else "translate"
+    digitize = mode == "digitize"
+    stage_list = ([st for st in DIGITIZE_STAGES if st[0] != "correct" or options.get("correct")] if digitize
+                  else PREPARE_STAGES if mode == "prepare" else STAGES)
     index = {k: i for i, (k, _) in enumerate(stage_list)}
     current = index.get(job.stage, 0)
     stages = []
@@ -53,7 +58,7 @@ def job_status(job: Job) -> dict:
     review = [{"page": p.number, "reasons": p.review_reasons} for p in job.pages if p.needs_review]
     return {
         "id": job.id,
-        "mode": "digitize" if digitize else "translate",
+        "mode": mode,
         "ocr_lang": options.get("ocr_lang"),
         "status": job.status,
         "stage": job.stage,
@@ -86,7 +91,7 @@ async def create_job(
     st = get_settings()
     if not rights_confirmed:
         raise HTTPException(400, "Debes confirmar que tienes derechos de uso sobre el libro.")
-    if mode not in ("translate", "digitize"):
+    if mode not in ("translate", "digitize", "prepare"):
         raise HTTPException(400, "Modo no válido.")
     if mode == "digitize":
         if ocr_lang not in ("en", "es", "auto"):
@@ -118,7 +123,8 @@ async def create_job(
     doc = Document(original_name=file.filename or "libro.pdf", path=str(path), sha256=sha, page_count=len(pdf))
     db.add(doc)
     db.flush()
-    options = {"mode": "digitize", "ocr_lang": ocr_lang, "correct": bool(correct_ocr)} if mode == "digitize" else {}
+    options = ({"mode": "digitize", "ocr_lang": ocr_lang, "correct": bool(correct_ocr)} if mode == "digitize"
+               else {"mode": "prepare"} if mode == "prepare" else {})
     job = Job(document_id=doc.id, status="queued", stage="analyze", source_lang=source_lang, target_lang=target_lang,
               options=options)
     db.add(job)

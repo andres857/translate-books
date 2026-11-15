@@ -1,4 +1,4 @@
-"""Traducción por segmentos controlados con DeepSeek (API compatible con OpenAI) o con la suscripción de Claude (CLI).
+"""Traducción por segmentos controlados con la API de DeepSeek (compatible con OpenAI).
 
 - Nunca se envía el PDF completo: solo segmentos con id, tipo y marcadores protegidos.
 - La respuesta debe devolver exactamente los mismos ids; se valida cada traducción.
@@ -10,10 +10,7 @@ import hashlib
 import html
 import json
 import logging
-import os
 import re
-import subprocess
-import tempfile
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -257,140 +254,11 @@ class DeepSeekTranslator(PromptMixin):
         return {str(s["id"]): s for s in out.get("segments", []) if isinstance(s, dict) and "id" in s}
 
 
-SEGMENTS_SCHEMA = {
-    "type": "object",
-    "properties": {"segments": {"type": "array", "items": {
-        "type": "object",
-        "properties": {"id": {"type": "string"}, "translation": {"type": "string"},
-                       "issues": {"type": "array", "items": {"type": "string"}}, "confidence": {"type": "number"}},
-        "required": ["id", "translation"]}}},
-    "required": ["segments"],
-}
-NAMES_SCHEMA = {
-    "type": "object",
-    "properties": {"names": {"type": "array", "items": {
-        "type": "object", "properties": {"text": {"type": "string"}, "type": {"type": "string"}},
-        "required": ["text"]}}},
-    "required": ["names"],
-}
-# textos con los que la CLI de Claude avisa que se agotó el uso de la suscripción
-CORRECT_SCHEMA = {
-    "type": "object",
-    "properties": {"segments": {"type": "array", "items": {
-        "type": "object",
-        "properties": {"id": {"type": "string"}, "text": {"type": "string"},
-                       "issues": {"type": "array", "items": {"type": "string"}}},
-        "required": ["id", "text"]}}},
-    "required": ["segments"],
-}
-CLAUDE_QUOTA_TEXTS = ("hit your session limit", "hit your weekly limit", "hit your opus limit", "hit your sonnet limit",
-                      "usage limit", "5-hour limit", "weekly limit reached", "limit reached")
-CLAUDE_LOGIN_TEXTS = ("not logged in", "please run /login", "invalid api key", "authentication", "oauth")
-# variables que harían que la CLI cobrara por API en vez de usar la suscripción
-CLAUDE_PAID_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
-
-
-class ClaudeCLITranslator(PromptMixin):
-    """Traduce con la CLI oficial `claude -p` usando el login de la suscripción del usuario (sin llave de API).
-
-    Cada llamada va aislada: sin herramientas, sin MCP, sin settings ni memoria, sin sesión persistente y en una
-    carpeta temporal; el texto del libro solo viaja por stdin."""
-
-    def __init__(self, model: str = "sonnet", binary: str = "claude", timeout: float = 300, effort: str | None = None,
-                 oauth_token: str = "", prompts: dict | None = None):
-        self.cli_model = model
-        self.prompts = prompts
-        self.oauth_token = oauth_token  # token de `claude setup-token`: solo por entorno, nunca por argv
-        self.model = f"claude-{model}"  # entra en la clave de caché: no se mezcla con DeepSeek
-        self.binary = binary
-        self.timeout = timeout
-        self.effort = effort
-
-    def command(self, system: str, schema: dict) -> list[str]:
-        cmd = [self.binary, "-p", "--model", self.cli_model, "--output-format", "json",
-               "--json-schema", json.dumps(schema, separators=(",", ":")), "--system-prompt", system,
-               "--tools", "", "--setting-sources", "", "--strict-mcp-config", "--no-session-persistence",
-               "--disable-slash-commands", "--settings", json.dumps({"autoMemoryEnabled": False})]
-        if self.effort:
-            cmd[4:4] = ["--effort", self.effort]
-        return cmd
-
-    @retry(retry=retry_if_exception_type((TranslationAPIError, json.JSONDecodeError)),
-           stop=stop_after_attempt(4), wait=wait_exponential(multiplier=2, max=60), reraise=True)
-    def _chat_json(self, system: str, user: str, schema: dict) -> dict:
-        env = {k: v for k, v in os.environ.items() if k not in CLAUDE_PAID_ENV}
-        env.update(DISABLE_AUTOUPDATER="1", CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="1")
-        if self.oauth_token:
-            env["CLAUDE_CODE_OAUTH_TOKEN"] = self.oauth_token
-        try:
-            with tempfile.TemporaryDirectory(prefix="claude-call-") as cwd:
-                done = subprocess.run(self.command(system, schema), input=user, capture_output=True, text=True,
-                                      cwd=cwd, env=env, timeout=self.timeout)
-        except FileNotFoundError:
-            raise FatalAPIError("CLAUDE_CLI_MISSING: no se encontró el programa 'claude' en este equipo") from None
-        except subprocess.TimeoutExpired:
-            raise TranslationAPIError("La CLI de Claude tardó demasiado") from None
-        try:
-            final = json.loads(done.stdout or "")
-        except ValueError:
-            final = None
-        if isinstance(final, dict):
-            usage = final.get("usage") or {}
-            cost = final.get("total_cost_usd")
-            self._measure(usage.get("input_tokens", 0) + usage.get("cache_read_input_tokens", 0)
-                          + usage.get("cache_creation_input_tokens", 0), usage.get("output_tokens", 0),
-                          float(cost) if isinstance(cost, (int, float)) else None)
-        message = str((final or {}).get("result") or "") if isinstance(final, dict) else ""
-        evidence = (message + "\n" + (done.stderr or "")[-2000:]).lower()
-        if not isinstance(final, dict) or final.get("is_error") or done.returncode:
-            if any(t in evidence for t in CLAUDE_QUOTA_TEXTS):
-                raise FatalAPIError("CLAUDE_QUOTA: " + (message or done.stderr or "")[:300])
-            if any(t in evidence for t in CLAUDE_LOGIN_TEXTS):
-                raise FatalAPIError("CLAUDE_LOGIN: " + (message or done.stderr or "")[:300])
-            raise TranslationAPIError("La CLI de Claude falló: " + (message or done.stderr or "")[:300])
-        data = final.get("structured_output")
-        if isinstance(data, dict):
-            return data
-        text = message.strip()
-        if text.startswith("```"):
-            text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text)
-        return json.loads(text)
-
-    def translate_batch(self, items: list[dict], context: dict) -> dict[str, dict]:
-        payload = {"book_title": context.get("title", ""), "glossary": context.get("glossary", {}),
-                   "segments": items}
-        user = TRANSLATE_USER_INTRO + "\n" + json.dumps(payload, ensure_ascii=False)
-        out = self._chat_json(self.prompt("translate"), user, SEGMENTS_SCHEMA)
-        return {str(s["id"]): s for s in out.get("segments", []) if isinstance(s, dict) and "id" in s}
-
-    def shorten_batch(self, items: list[dict], context: dict) -> dict[str, dict]:
-        out = self._chat_json(self.prompt("shorten"), json.dumps({"book_title": context.get("title", ""), "segments": items},
-                                                         ensure_ascii=False), SEGMENTS_SCHEMA)
-        return {str(s["id"]): s for s in out.get("segments", []) if isinstance(s, dict) and "id" in s}
-
-    def extract_names(self, text: str) -> list[dict]:
-        out = self._chat_json(self.prompt("names"), text[:12000], NAMES_SCHEMA)
-        return [n for n in out.get("names", []) if isinstance(n, dict) and n.get("text")]
-
-    def correct_batch(self, items: list[dict], context: dict) -> dict[str, dict]:
-        prompt = render_correct(self.prompt("correct"), context.get("lang", "en"))
-        out = self._chat_json(prompt, json.dumps({"segments": items}, ensure_ascii=False), CORRECT_SCHEMA)
-        return {str(s["id"]): s for s in out.get("segments", []) if isinstance(s, dict) and "id" in s}
-
-
 TRANSLATE_USER_INTRO = ("Traduce al español los segmentos de este JSON. 'type' indica si es título, cuerpo, índice, "
                         "leyenda o tabla.")
 DEFAULT_PROMPTS = {"translate": SYSTEM_PROMPT, "correct": CORRECT_PROMPT, "shorten": SHORTEN_PROMPT,
                    "names": NAMES_PROMPT}
 _DS_JSON = "response_format = json_object (modo JSON); el prompt pide la forma exacta del JSON."
-_CLAUDE_CLI = ("claude -p --json-schema … --system-prompt <prompt> --tools \"\" (sin herramientas, MCP, settings, "
-               "memoria ni sesión); el texto viaja por stdin.")
-
-
-def _schema(obj: dict) -> str:
-    return json.dumps(obj, ensure_ascii=False, indent=2)
-
-
 # Registro de solo lectura para Administración › Prompts (los borradores del playground no lo cambian)
 PROMPTS: dict[str, dict] = {
     "translate": {
@@ -398,8 +266,7 @@ PROMPTS: dict[str, dict] = {
         "description": "Traduce los bloques de cada página (lotes de segmentos con id, tipo y marcadores protegidos).",
         "user_template": TRANSLATE_USER_INTRO + '\n{"book_title": "…", "glossary": {"…": "…"}, '
                          '"segments": [{"id": "p012_s03", "type": "body", "text": "…", "context": "…"}]}',
-        "output": {"deepseek": f"{_DS_JSON} Razonamiento según Configuración (disabled/low/high/max).",
-                   "claude": f"{_CLAUDE_CLI}\nEsquema:\n{_schema(SEGMENTS_SCHEMA)}"},
+        "output": {"deepseek": f"{_DS_JSON} Razonamiento según Configuración (disabled/low/high/max)."},
     },
     "correct": {
         "title": "Corrección OCR (digitalizar)", "mode": "digitize", "version": CORRECT_PROMPT_VERSION,
@@ -407,23 +274,20 @@ PROMPTS: dict[str, dict] = {
         "description": "Corrige errores de reconocimiento de libros escaneados, sin traducir. {lang} se rellena con "
                        "el idioma elegido al digitalizar.",
         "user_template": '{"segments": [{"id": "p004_s01", "text": "…"}]}',
-        "output": {"deepseek": f"{_DS_JSON} Sin razonamiento.",
-                   "claude": f"{_CLAUDE_CLI}\nEsquema:\n{_schema(CORRECT_SCHEMA)}"},
+        "output": {"deepseek": f"{_DS_JSON} Sin razonamiento."},
     },
     "shorten": {
         "title": "Acortar", "mode": "translate", "version": PROMPT_VERSION, "text": SHORTEN_PROMPT,
         "description": "Solo cuando una traducción no cabe en su caja: pide una versión más breve con max_chars.",
         "user_template": '{"book_title": "…", "segments": [{"id": "…", "type": "body", "original": "…", "current": "…", '
                          '"max_chars": 42}]}',
-        "output": {"deepseek": f"{_DS_JSON} Mismo razonamiento que la traducción.",
-                   "claude": f"{_CLAUDE_CLI}\nEsquema:\n{_schema(SEGMENTS_SCHEMA)}"},
+        "output": {"deepseek": f"{_DS_JSON} Mismo razonamiento que la traducción."},
     },
     "names": {
         "title": "Nombres propios", "mode": "translate", "version": PROMPT_VERSION, "text": NAMES_PROMPT,
         "description": "Antes de traducir: extrae de créditos y portada los nombres que no deben traducirse.",
         "user_template": "Texto de las primeras páginas (máx. 12 000 caracteres).",
-        "output": {"deepseek": f"{_DS_JSON} Sin razonamiento.",
-                   "claude": f"{_CLAUDE_CLI}\nEsquema:\n{_schema(NAMES_SCHEMA)}"},
+        "output": {"deepseek": f"{_DS_JSON} Sin razonamiento."},
     },
 }
 

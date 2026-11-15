@@ -112,10 +112,6 @@ export default function PromptsPage() {
                       <td>API de DeepSeek</td>
                       <td className="wrap"><pre className="code small flat">{p.output.deepseek}</pre></td>
                     </tr>
-                    <tr>
-                      <td>Suscripción de Claude</td>
-                      <td className="wrap"><pre className="code small flat">{p.output.claude}</pre></td>
-                    </tr>
                   </tbody>
                 </table>
               </div>

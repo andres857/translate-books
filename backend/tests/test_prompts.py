@@ -6,7 +6,6 @@ import httpx
 import pytest
 
 from app.pipeline import translate as tr
-from tests.test_claude_translator import OK, calls, fake_cli
 
 # texto exacto de producción antes del cambio a {lang} con llaves simples (la caché c2 depende de él)
 CORRECT_HASHES = {
@@ -30,7 +29,7 @@ def test_registry_lists_all_tasks():
     assert tr.PROMPTS["translate"]["version"] == tr.PROMPT_VERSION
     assert tr.PROMPTS["correct"]["version"] == tr.CORRECT_PROMPT_VERSION
     for p in tr.PROMPTS.values():
-        assert p["title"] and p["user_template"] and set(p["output"]) == {"deepseek", "claude"}
+        assert p["title"] and p["user_template"] and set(p["output"]) == {"deepseek"}
     json.dumps(tr.PROMPTS)  # serializable para la API
 
 
@@ -71,19 +70,6 @@ def test_deepseek_meter_counts_tokens_cost_unknown(monkeypatch):
     t.translate_batch(ITEMS, {})
     m = t.meter.snapshot()
     assert m == {"calls": 2, "tokens_in": 200, "tokens_out": 80, "cost_usd": None}
-
-
-def test_claude_override_prompt_and_meter(tmp_path, monkeypatch):
-    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
-    body = OK.replace('"structured_output"', '"usage": {"input_tokens": 50, "output_tokens": 7}, '
-                                              '"total_cost_usd": 0.0125, "structured_output"')
-    script, log = fake_cli(tmp_path, body)
-    t = tr.ClaudeCLITranslator(binary=str(script), prompts={"translate": "BORRADOR CLAUDE"})
-    t.meter = tr.UsageMeter()
-    t.translate_batch(ITEMS, {})
-    argv = calls(log)[0]["argv"]
-    assert argv[argv.index("--system-prompt") + 1] == "BORRADOR CLAUDE"
-    assert t.meter.snapshot() == {"calls": 1, "tokens_in": 50, "tokens_out": 7, "cost_usd": 0.0125}
 
 
 def test_correct_override_renders_lang(tmp_path, monkeypatch):

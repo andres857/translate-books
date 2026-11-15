@@ -1,7 +1,7 @@
 """CLI de desarrollo: traduce un PDF sin frontend ni API.
 
 Uso:
-  python -m app.cli translate libro.pdf --out salida/ [--pages 1-12,41] [--provider deepseek|claude|fake] [--fake] [--protect "Kim Farley"]
+  python -m app.cli translate libro.pdf --out salida/ [--pages 1-12,41] [--provider deepseek|fake] [--fake] [--protect "Kim Farley"]
   python -m app.cli epub <job_id>                      # EPUB para Kindle de un trabajo terminado
   python -m app.cli analyze libro.pdf [--pages 1-5]     # muestra segmentos detectados sin traducir
 """
@@ -120,7 +120,7 @@ def main(argv=None) -> None:
     t.add_argument("--out", default="data/outputs/cli")
     t.add_argument("--pages", help="solo traducir estas páginas, p. ej. 1-10,41")
     t.add_argument("--fake", action="store_true", help="traductor falso sin API (pruebas de maquetación)")
-    t.add_argument("--provider", choices=["deepseek", "claude", "fake"],
+    t.add_argument("--provider", choices=["deepseek", "fake"],
                    help="modo de traducción (por defecto, el elegido en Ajustes)")
     t.add_argument("--protect", action="append", help="término protegido adicional")
     t.add_argument("--no-visual", action="store_true", help="omitir comparación visual (más rápido)")

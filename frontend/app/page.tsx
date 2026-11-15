@@ -166,7 +166,7 @@ export default function UploadPage() {
         )}
 
         <div className="row">
-          <button className="btn lg" disabled={!file || !rights || busy} onClick={submit}>
+          <button className="btn" disabled={!file || !rights || busy} onClick={submit}>
             {busy ? "Subiendo…" : mode === "translate" ? "Traducir libro" : "Digitalizar libro"} {!busy && <IconArrowRight />}
           </button>
         </div>

@@ -1,7 +1,7 @@
 # Levanta todo el servicio: api (FastAPI) + worker (pipeline) + frontend (Next.js).
-#   cp .env.example .env   # DEEPSEEK_API_KEY y/o CLAUDE_CODE_OAUTH_TOKEN (de `claude setup-token`)
+#   cp .env.example .env   # DEEPSEEK_API_KEY (o pégala después en la web)
 #   docker compose up --build -d
-# El método (suscripción de Claude o API de DeepSeek) se elige en Administración › Configuración.
+# La llave y el modelo de DeepSeek se editan en Administración › Configuración.
 x-backend: &backend
   image: traductor-backend
   env_file:

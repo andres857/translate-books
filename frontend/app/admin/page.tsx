@@ -89,7 +89,7 @@ export default function AdminPage() {
                     <Link href={`/admin/jobs/${j.id}`}>{j.title_es || j.original_name.replace(/\.pdf$/i, "")}</Link>
                     {j.title_es && <div className="muted">{j.original_name}</div>}
                   </td>
-                  <td>{j.mode === "digitize" ? "Digitalización" : "Traducción"}</td>
+                  <td>{j.mode === "digitize" ? "Digitalización" : j.mode === "prepare" ? "Preparado para el Playground" : "Traducción"}</td>
                   <td>
                     <span className={`badge ${STATUS[j.status].kind}`}>
                       {STATUS[j.status].text}{j.status === "running" ? ` · ${Math.round(j.progress)}%` : ""}

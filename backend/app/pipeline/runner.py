@@ -109,43 +109,8 @@ def spanish_filename(title_es: str, fallback: str) -> str:
     return f"{name[:150].rstrip()} (ES).pdf"
 
 
-def run_pipeline(
-    input_pdf: Path,
-    out_dir: Path,
-    translator: Translator,
-    cache: Cache,
-    protected_terms: dict[str, str] | None = None,
-    glossary: dict[str, str] | None = None,
-    options: PipelineOptions | None = None,
-    progress: ProgressFn | None = None,
-    should_stop: Callable[[], bool] | None = None,
-    overrides: dict[str, str] | None = None,
-) -> PipelineResult:
-    """overrides: clave de segmento -> traducción corregida a mano (se impone tal cual, sin acortarla)."""
-    opts = options or PipelineOptions()
-    out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    report_extra: dict = {"advertencias": []}
-
-    timings: dict[str, float] = {}
-    current = {"stage": None, "t": time.time()}
-
-    def tick(stage: str, done: int, total: int, page: int | None = None):
-        if stage != current["stage"]:
-            now = time.time()
-            if current["stage"]:
-                timings[current["stage"]] = round(timings.get(current["stage"], 0) + now - current["t"], 1)
-                log.info("Etapa %s: %.1f s", current["stage"], now - current["t"])
-            current["stage"], current["t"] = stage, now
-        if should_stop and should_stop():
-            raise Cancelled()
-        if progress:
-            progress(stage, done, total, page)
-
-    # ---------------------------------------------------------------- análisis
-    doc = pymupdf.open(input_pdf)
-    if doc.is_encrypted:
-        raise ValueError("El PDF está protegido con contraseña")
+def _analyze_and_ocr(doc: pymupdf.Document, opts: PipelineOptions, tick, report_extra: dict) -> list[PageInfo]:
+    """Análisis del PDF y OCR del texto dentro de imágenes (solo donde hace falta). No llama a ningún modelo."""
     tick("analyze", 0, len(doc))
     pages = analyze(doc)
     tick("analyze", len(doc), len(doc))
@@ -207,6 +172,48 @@ def run_pipeline(
             if p.number not in opts.only_pages:
                 p.segments = []
                 p.needs_review, p.review_reasons = False, []
+
+    return pages
+
+
+def run_pipeline(
+    input_pdf: Path,
+    out_dir: Path,
+    translator: Translator,
+    cache: Cache,
+    protected_terms: dict[str, str] | None = None,
+    glossary: dict[str, str] | None = None,
+    options: PipelineOptions | None = None,
+    progress: ProgressFn | None = None,
+    should_stop: Callable[[], bool] | None = None,
+    overrides: dict[str, str] | None = None,
+) -> PipelineResult:
+    """overrides: clave de segmento -> traducción corregida a mano (se impone tal cual, sin acortarla)."""
+    opts = options or PipelineOptions()
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    report_extra: dict = {"advertencias": []}
+
+    timings: dict[str, float] = {}
+    current = {"stage": None, "t": time.time()}
+
+    def tick(stage: str, done: int, total: int, page: int | None = None):
+        if stage != current["stage"]:
+            now = time.time()
+            if current["stage"]:
+                timings[current["stage"]] = round(timings.get(current["stage"], 0) + now - current["t"], 1)
+                log.info("Etapa %s: %.1f s", current["stage"], now - current["t"])
+            current["stage"], current["t"] = stage, now
+        if should_stop and should_stop():
+            raise Cancelled()
+        if progress:
+            progress(stage, done, total, page)
+
+    # ---------------------------------------------------------------- análisis
+    doc = pymupdf.open(input_pdf)
+    if doc.is_encrypted:
+        raise ValueError("El PDF está protegido con contraseña")
+    pages = _analyze_and_ocr(doc, opts, tick, report_extra)
 
     # ---------------------------------------------------------------- protección
     tick("protect", 0, 1)
@@ -351,3 +358,45 @@ def recompose_page(
         return info
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+@dataclass
+class PreparedBook:
+    pages: list[PageInfo]
+    title: str
+    warnings: list[str]
+
+
+def prepare_book(
+    input_pdf: Path,
+    protected_terms: dict[str, str] | None = None,
+    options: PipelineOptions | None = None,
+    progress: ProgressFn | None = None,
+    should_stop: Callable[[], bool] | None = None,
+) -> PreparedBook:
+    """Solo la preparación para el Playground: análisis, OCR donde hace falta y protección de números, glifos y
+    términos. No traduce, no maqueta y no llama a ningún modelo: deja los bloques listos para evaluar variantes."""
+    opts = options or PipelineOptions()
+    report_extra: dict = {"advertencias": []}
+
+    def tick(stage: str, done: int, total: int, page: int | None = None):
+        if should_stop and should_stop():
+            raise Cancelled()
+        if progress:
+            progress(stage, done, total, page)
+
+    with pymupdf.open(input_pdf) as doc:
+        if doc.is_encrypted:
+            raise ValueError("El PDF está protegido con contraseña")
+        pages = _analyze_and_ocr(doc, opts, tick, report_extra)
+        title_segs, _ = _title_segments(pages, doc)
+        title = doc.metadata.get("title") or " ".join(s.text for s in title_segs)
+    tick("protect", 0, 1)
+    protector = Protector(protected_terms or {})
+    for p in pages:
+        for s in p.segments:
+            if s.action == "translate":
+                pt = protector.protect(s.html)
+                s.protected, s.placeholders = pt.text, pt.placeholders
+    tick("protect", 1, 1)
+    return PreparedBook(pages, title, report_extra["advertencias"])

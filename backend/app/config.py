@@ -20,8 +20,6 @@ class Settings(BaseSettings):
 
     # traductor falso (sin API) para probar la maquetación y la interfaz sin gastar tokens
     fake_translator: bool = False
-    # suscripción de Claude dentro de contenedores: token de `claude setup-token` (no es una llave de API)
-    claude_code_oauth_token: str = ""
     cors_origins: str = "http://localhost:3000"
 
     max_upload_mb: int = 200

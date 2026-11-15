@@ -150,13 +150,17 @@ class PlaygroundRun(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"), index=True)
     task: Mapped[str] = mapped_column(String(16))  # translate | correct
-    pages: Mapped[str] = mapped_column(String(32))  # "12-18"
+    scope: Mapped[str] = mapped_column(String(16), default="pages")  # page | pages | chapter | book
+    pages: Mapped[str] = mapped_column(Text)  # normalizado: "12-18" o "3,7,12-15"
     chapter: Mapped[str | None] = mapped_column(Text)
     variants: Mapped[list] = mapped_column(JSON, default=list)  # con el texto del prompt copiado al lanzar
     status: Mapped[str] = mapped_column(String(16), default="queued", index=True)
     progress: Mapped[float] = mapped_column(Float, default=0.0)
     current_variant: Mapped[int | None] = mapped_column(Integer)
     results: Mapped[list] = mapped_column(JSON, default=list)
+    # progreso para reanudar tras una pausa por cuota: {"caches": {etiqueta: {clave: salida}}, "done", "total"}
+    state: Mapped[dict | None] = mapped_column(JSON)
+    votes: Mapped[dict | None] = mapped_column(JSON)  # {"41": "A" | "tie"}: la mejor variante de cada página
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)

@@ -5,7 +5,7 @@ import { useEffect, useState, type ComponentType, type SVGProps } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { getSettings, methodLabel, SETTINGS_EVENT } from "@/lib/api";
-import { IconChevron, IconCloud, IconFlask, IconKey, IconLayers, IconSettings, IconText, IconUpload } from "./art";
+import { IconChevron, IconCloud, IconFlask, IconLayers, IconSettings, IconText, IconUpload } from "./art";
 
 type Item = { href: string; label: string; short: string; Icon: ComponentType<SVGProps<SVGSVGElement>>; match: (p: string) => boolean };
 
@@ -86,7 +86,7 @@ export function SideNav() {
         })}
       </div>
       <Link href="/admin/settings" className="sidenav-foot" title="Método de traducción activo">
-        <span className="sidenav-icon">{method?.provider === "claude" ? <IconKey width={16} height={16} /> : <IconCloud width={16} height={16} />}</span>
+        <span className="sidenav-icon"><IconCloud width={16} height={16} /></span>
         <span className="sidenav-text">
           <span className="sidenav-caption">Método activo</span>
           {method?.label ?? "Sin conexión con el servidor"}

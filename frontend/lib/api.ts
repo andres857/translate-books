@@ -1,6 +1,6 @@
 export type StageState = "completed" | "in_progress" | "pending" | "error" | "cancelled" | "paused";
 
-export type JobMode = "translate" | "digitize";
+export type JobMode = "translate" | "digitize" | "prepare"; // prepare: solo extraer la información (Playground)
 export type OcrLang = "en" | "es" | "auto";
 
 export interface JobStatus {
@@ -72,37 +72,28 @@ export async function jobAction(id: string | number, action: "cancel" | "resume"
   return parse(await fetch(`/api/jobs/${id}/${action}`, { method: "POST" }));
 }
 
-export type Provider = "deepseek" | "claude" | "fake";
+export type Provider = "deepseek" | "fake";
 
 export interface TranslationSettings {
   provider: Provider;
   deepseek_model: string;
   deepseek_thinking: "disabled" | "low" | "high" | "max";
-  claude_model: "sonnet" | "opus";
-  claude_concurrency: number;
   deepseek_concurrency: number;
   deepseek_key_set: boolean;
   deepseek_key_hint: string;
-  claude_available: boolean;
-  /** token = token de `claude setup-token` · session = login de Claude Code en el equipo · none */
-  claude_auth: "token" | "session" | "none";
-  claude_token_set: boolean;
-  claude_token_hint: string;
 }
 
-type ReadOnly = "deepseek_key_set" | "deepseek_key_hint" | "claude_available" | "claude_auth" | "claude_token_set" | "claude_token_hint";
+type ReadOnly = "deepseek_key_set" | "deepseek_key_hint";
 
 export type SettingsChanges = Partial<Omit<TranslationSettings, ReadOnly>> & {
   deepseek_api_key?: string;
-  claude_oauth_token?: string;
 };
 
 /** Evento para que la barra lateral refresque el método activo tras guardar. */
 export const SETTINGS_EVENT = "astrobooks:settings";
 
 /** Nombre corto del método activo, para la barra lateral y la cabecera de Admin. */
-export function methodLabel(s: Pick<TranslationSettings, "provider" | "claude_model" | "deepseek_model">): string {
-  if (s.provider === "claude") return `Suscripción · ${s.claude_model === "opus" ? "Opus" : "Sonnet"}`;
+export function methodLabel(s: Pick<TranslationSettings, "provider" | "deepseek_model">): string {
   if (s.provider === "deepseek") return `API · ${s.deepseek_model || "DeepSeek"}`;
   return "Prueba sin API";
 }
@@ -243,7 +234,7 @@ export interface PromptInfo {
   text: string;
   description: string;
   user_template: string;
-  output: { deepseek: string; claude: string };
+  output: { deepseek: string };
 }
 
 export interface PromptDraft {
@@ -260,19 +251,53 @@ export interface PlaygroundBook {
   original_name: string;
   page_count: number;
   task: PlaygroundTask;
+  prepared: boolean; // subido desde el Playground: analizado y sin traducir
+  blocks: number;
+  production: boolean; // tiene libro traducido para comparar
 }
 
 export interface Chapter {
   title: string;
   level: number;
   pages: string;
+  source: "toc" | "detected";
+}
+
+export type PlaygroundScope = "page" | "pages" | "chapter" | "book";
+
+export interface PlaygroundPageInfo {
+  number: number;
+  kind: string; // digital | scanned | mixed | image_only | blank | "" (no guardada)
+  blocks: number;
+}
+
+export interface Estimate {
+  scope: PlaygroundScope;
+  pages: number;
+  page_spec: string;
+  blocks: number;
+  chars: number;
+  calls_per_variant: number;
+  calls: number;
+  variants: { label: string; seconds: number | null }[];
+  seconds: number | null;
+  paid: boolean;
+  needs_confirm: boolean;
+}
+
+export interface RunRequest {
+  job_id: number;
+  scope: PlaygroundScope;
+  pages: string;
+  chapter?: string | null;
+  variants: VariantInput[];
+  confirm?: boolean;
 }
 
 export interface VariantInput {
   provider: Provider;
   model?: string;
   thinking?: string;
-  effort?: string;
   prompt: number | "production";
 }
 
@@ -283,33 +308,92 @@ export interface Variant extends Required<Omit<VariantInput, "prompt">> {
   prompt_text: string | null;
 }
 
+export interface SegmentOutput {
+  output: string | null;
+  issues: string[];
+  fit?: number | null; // escala de la maquetación (1 = cabe sin reducir)
+  layout_issues?: string[];
+}
+
 export interface VariantResult {
   label: string;
-  segments: Record<string, { output: string | null; issues: string[] }>;
+  segments: Record<string, SegmentOutput>;
   seconds: number;
   calls: number;
   tokens_in: number;
   tokens_out: number;
   cost_usd: number | null;
-  cost_kind: "api_equivalent" | "unknown";
+  cost_kind: "unknown";
   error: string | null;
+  composed?: boolean; // tiene su PDF maquetado
+  composed_at?: number;
+  compose_error?: string;
+  stale_pages?: number[]; // páginas evaluadas con la configuración anterior
+  pages?: Record<string, { needs_review: boolean; reasons: string[] }>;
+}
+
+export interface RunSummary {
+  warn_blocks: number;
+  warn_pages: number[];
+  won: number;
 }
 
 export interface PlaygroundRun {
   id: number;
   job_id: number;
   task: PlaygroundTask;
+  scope: PlaygroundScope;
   pages: string;
   chapter: string | null;
   variants: Variant[];
-  status: "queued" | "running" | "done" | "failed" | "cancelled";
+  status: "queued" | "running" | "paused" | "done" | "failed" | "cancelled";
   progress: number;
   current_variant: number | null;
+  blocks_done: number | null;
+  blocks_total: number | null;
+  stage?: "translate" | "compose" | null;
+  composing?: string | null;
+  trying?: { label: string; page: number } | null;
+  votes?: Record<string, string>;
   error: string | null;
   created_at: string | null;
   book: string | null;
   results?: VariantResult[];
+  page_list?: number[];
+  production?: boolean;
+  summary?: Record<string, RunSummary>;
   segments?: { key: string; page: number; block_type: string; source: string; production: string | null }[];
+}
+
+export interface PageCell {
+  output: string | null;
+  warnings: string[];
+  fit: number | null;
+}
+
+export interface PageBlock {
+  key: string;
+  bbox: number[];
+  block_type: string;
+  source: string;
+  cols: Record<string, PageCell>;
+}
+
+export interface PageMetrics {
+  warn_blocks: number;
+  min_scale: number | null;
+  length_pct: number;
+  review: string[];
+  stale: boolean;
+}
+
+export interface RunPage {
+  number: number;
+  width: number | null;
+  height: number | null;
+  blocks: PageBlock[];
+  metrics: Record<string, PageMetrics>;
+  vote: string | null;
 }
 
 export async function getPrompts(): Promise<Record<PromptTask, PromptInfo>> {
@@ -340,8 +424,21 @@ export async function listChapters(jobId: number): Promise<Chapter[]> {
   return parse(await fetch(`/api/admin/playground/books/${jobId}/chapters`, { cache: "no-store" }));
 }
 
-export async function createRun(body: { job_id: number; pages: string; chapter?: string | null; variants: VariantInput[] }): Promise<PlaygroundRun> {
+/** Páginas del libro para el selector de alcance: tipo (digital, scanned…) y bloques extraídos. */
+export async function listPlaygroundPages(jobId: number): Promise<PlaygroundPageInfo[]> {
+  return parse(await fetch(`/api/admin/playground/books/${jobId}/pages`, { cache: "no-store" }));
+}
+
+export async function estimateRun(body: Omit<RunRequest, "chapter" | "confirm">): Promise<Estimate> {
+  return parse(await fetch("/api/admin/playground/estimate", json("POST", body)));
+}
+
+export async function createRun(body: RunRequest): Promise<PlaygroundRun> {
   return parse(await fetch("/api/admin/playground/runs", json("POST", body)));
+}
+
+export async function resumeRun(id: number): Promise<PlaygroundRun> {
+  return parse(await fetch(`/api/admin/playground/runs/${id}/resume`, { method: "POST" }));
 }
 
 export async function listRuns(): Promise<PlaygroundRun[]> {
@@ -354,4 +451,29 @@ export async function getRun(id: number): Promise<PlaygroundRun> {
 
 export async function cancelRun(id: number): Promise<PlaygroundRun> {
   return parse(await fetch(`/api/admin/playground/runs/${id}/cancel`, { method: "POST" }));
+}
+
+export async function getRunPage(id: number, page: number): Promise<RunPage> {
+  return parse(await fetch(`/api/admin/playground/runs/${id}/pages/${page}`, { cache: "no-store" }));
+}
+
+/** Imagen de una página: original, producción o el PDF maquetado de una variante. v cambia al recomponer. */
+export function runPageImageUrl(id: number, page: number, col: string, v?: number | string): string {
+  return `/api/admin/playground/runs/${id}/pages/${page}/image?col=${encodeURIComponent(col)}&dpi=110${v ? `&v=${v}` : ""}`;
+}
+
+export function jobPageImageUrl(jobId: number, page: number, version: "original" | "translated", dpi = 110): string {
+  return `/api/jobs/${jobId}/pages/${page}/preview?version=${version}&dpi=${dpi}`;
+}
+
+export async function voteRunPage(id: number, page: number, vote: string | null): Promise<{ votes: Record<string, string> }> {
+  return parse(await fetch(`/api/admin/playground/runs/${id}/votes/${page}`, json("PUT", { vote })));
+}
+
+export async function tryVariantPage(id: number, label: string, page: number, variant: VariantInput): Promise<PlaygroundRun> {
+  return parse(await fetch(`/api/admin/playground/runs/${id}/variants/${label}/try`, json("POST", { page, variant })));
+}
+
+export async function composeRun(id: number): Promise<PlaygroundRun> {
+  return parse(await fetch(`/api/admin/playground/runs/${id}/compose`, { method: "POST" }));
 }

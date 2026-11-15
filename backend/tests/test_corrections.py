@@ -204,12 +204,12 @@ def test_erasing_text_skips_colorless_mask_images():
     """Imágenes que son solo una máscara (sin espacio de color) no deben detener la traducción."""
     from app.pipeline.ocr import erase_text_in_images
 
-    src = pymupdf.open(Path(__file__).resolve().parents[2] / "data" / "uploads"
-                       / "cbae3b1513511999e919ead880c347462fe6932de27b0a4e6a7f90ab59f1ac01" / "original.pdf") \
-        if (Path(__file__).resolve().parents[2] / "data" / "uploads").exists() else None
-    if src is None:
+    book = (Path(__file__).resolve().parents[2] / "data" / "uploads"
+            / "cbae3b1513511999e919ead880c347462fe6932de27b0a4e6a7f90ab59f1ac01" / "original.pdf")
+    if not book.exists():  # el PDF concreto, no solo la carpeta (puede haber otros libros subidos)
         import pytest
         pytest.skip("libro de prueba no disponible")
+    src = pymupdf.open(book)
     page = src[4]
     infos = [i for i in page.get_image_info(xrefs=True) if i.get("xref") == 23]
     assert infos and pymupdf.Pixmap(src, 23).colorspace is None

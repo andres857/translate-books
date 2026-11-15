@@ -18,12 +18,8 @@ mkdir data                  # créala tú: si la crea Docker queda a nombre de r
 docker compose up --build -d
 ```
 
-En `.env` pon al menos una credencial (o pégala después en la web, en **Administración › Configuración**):
-
-- **API**: `DEEPSEEK_API_KEY=sk-…`
-- **Suscripción de Claude** (Pro/Max): ejecuta `claude setup-token` en tu equipo y copia el token en
-  `CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat…`. La imagen incluye la CLI de Claude Code, así que la suscripción funciona
-  dentro de los contenedores sin montar `~/.claude`.
+En `.env` pon la llave de DeepSeek, `DEEPSEEK_API_KEY=sk-…`, o pégala después en la web, en
+**Administración › Configuración**.
 
 Si el puerto 3000 u 8000 está ocupado, cambia `WEB_PORT` / `API_PORT` en `.env`. `APP_UID`/`APP_GID` deben ser los
 de tu usuario (`id -u`, `id -g`) para que los archivos de `data/` queden a tu nombre.
@@ -51,23 +47,18 @@ python -m app.worker                               # worker
 cd ../frontend && npm install && npm run dev       # interfaz
 ```
 
-## Métodos de traducción (Administración › Configuración)
+## Traducción con DeepSeek (Administración › Configuración)
 
-En la web, **Administración › Configuración** (`/admin/settings`; `/settings` redirige allí) permite elegir el método y
+En la web, **Administración › Configuración** (`/admin/settings`; `/settings` redirige allí) configura la traducción y
 se aplica al siguiente libro, sin reiniciar:
 
-- **Suscripción de Claude**: usa `claude -p` (Claude Code); Sonnet por defecto, Opus opcional. Se autentica con el
-  token de `claude setup-token` (Docker o cualquier equipo) o, en desarrollo local, con la sesión ya iniciada. Nunca
-  usa llave de API: se quitan `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN` del entorno y el token viaja solo por
-  variable de entorno. Cada llamada va aislada (sin herramientas, MCP, settings, memoria ni sesión).
-  **Límites**: consume las ventanas de uso de 5 horas y semanal de tu plan y la concurrencia es menor (4); si se
-  agota, el trabajo se detiene con un aviso y se puede reanudar (la caché evita repetir lo ya traducido).
-- **DeepSeek (API)**: llave, modelo y razonamiento editables. Las llaves de DeepSeek empiezan por `sk-`.
+- **DeepSeek (API)**: llave, modelo y razonamiento editables. Las llaves de DeepSeek empiezan por `sk-`. Si la cuenta
+  se queda sin saldo, el trabajo se detiene con un aviso y se puede reanudar (la caché evita repetir lo ya traducido).
 - **Prueba sin API** (botón secundario): traductor falso para revisar la maquetación.
 
 "Probar conexión" hace una traducción real mínima con el modo elegido. Los ajustes se guardan en
-`data/settings.json` (fuera de git, permisos 0600) y sobrescriben a `.env`; la llave y el token nunca se devuelven.
-En la CLI: `python -m app.cli translate libro.pdf --provider claude|deepseek|fake`.
+`data/settings.json` (fuera de git, permisos 0600) y sobrescriben a `.env`; la llave nunca se devuelve.
+En la CLI: `python -m app.cli translate libro.pdf --provider deepseek|fake`.
 
 ## Solo digitalizar (PDF escaneado → PDF digital, sin traducir)
 
@@ -77,7 +68,7 @@ buscable, más su EPUB para Kindle, sin traducir:
 1. Análisis: detecta las páginas sin texto (las que ya tienen texto no se tocan).
 2. OCR con **OCRmyPDF/Tesseract** (`--skip-text --rotate-pages --deskew --clean --optimize 1`): capa de texto
    invisible sobre la imagen original, que no cambia. Idioma: inglés, español o ambos.
-3. Corrección opcional con el método de Administración › Configuración (Claude o DeepSeek): solo errores de reconocimiento
+3. Corrección opcional con DeepSeek (Administración › Configuración): solo errores de reconocimiento
    ("youre" → "you’re", "anastrology" → "an astrology"), sin traducir ni reescribir. Se rechaza si cambia
    números, formato o longitud. Se usa en el EPUB; el PDF conserva la capa de OCR con sus posiciones exactas.
 4. EPUB fluido: las páginas escaneadas salen como texto; las figuras se recortan por zonas con tinta que no
@@ -128,10 +119,8 @@ Los estilos de toda la interfaz salen de `handoff/tokens.css` (copiado a `fronte
 | `TRANSLATION_CONCURRENCY` | Solicitudes simultáneas a la API (por defecto 10). |
 | `MIN_FONT_SCALE` / `MIN_FONT_SIZE_PT` | Límite de reducción del texto. Solo se pide revisión si el texto queda por debajo del tamaño mínimo legible o se superpone con otro bloque. |
 | `FAKE_TRANSLATOR` | `true` para probar sin API. |
-| `CLAUDE_CODE_OAUTH_TOKEN` | Token de `claude setup-token` para el método suscripción (también editable en la web). |
 | `WEB_PORT` / `API_PORT` | Puertos publicados por `docker compose` (3000 / 8000). |
 | `APP_UID` / `APP_GID` | Usuario con el que corren los contenedores (dueño de `data/`). |
-| `CLAUDE_BIN` | Ruta del programa `claude` si no está en el `PATH`. |
 | `EBOOK_CONVERT_BIN` | Ruta de `ebook-convert` (Calibre) si no está en el `PATH`. |
 
 ## Prueba con el libro de referencia

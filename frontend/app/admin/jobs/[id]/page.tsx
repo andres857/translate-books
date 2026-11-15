@@ -75,10 +75,13 @@ export default function AdminJobPage({ params }: { params: Promise<{ id: string 
           <h1>{job.title_es || job.original_name.replace(/\.pdf$/i, "")}</h1>
           <p>
             {job.original_name} · {job.page_count} páginas ·{" "}
-            {job.mode === "digitize" ? "digitalización" : "traducción EN → ES"}
+            {job.mode === "digitize" ? "digitalización" : job.mode === "prepare" ? "preparado para el Playground (sin traducir)" : "traducción EN → ES"}
           </p>
         </div>
-        {job.status === "done" && (
+        {job.status === "done" && job.mode === "prepare" && (
+          <Link className="btn" href="/admin/playground">Evaluar en el Playground</Link>
+        )}
+        {job.status === "done" && job.mode !== "prepare" && (
           <div className="row">
             <a className="btn" href={`/api/jobs/${job.id}/download`}><IconDownload /> PDF</a>
             <a className="btn secondary" href={`/api/jobs/${job.id}/download?format=epub`}>EPUB</a>
