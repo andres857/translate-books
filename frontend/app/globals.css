@@ -31,8 +31,6 @@
   --layout-thumb-m: 136px;  /* miniatura mediana */
   --layout-thumb-l: 196px;  /* miniatura grande */
   --layout-preview: 440px;  /* visor de página junto a la galería */
-  --layout-toc: 420px;      /* bloque fijo del índice de capítulos, abajo en la columna de libros */
-  --layout-scope-head: 0px; /* alto de la cabecera fija de la tarjeta de alcance (lo mide scope-view.tsx) */
   --layout-scope-btn: 420px;
 }
 
@@ -498,10 +496,8 @@ td .badge { margin-left: var(--space-4); }
 .hist-sheet img { display: block; width: 100%; height: auto; }
 .hist-main td.wrap { min-width: var(--layout-scope-select); }
 @media (max-width: 900px) {
-  .hist, .hist-page, .pg-start { grid-template-columns: minmax(0, 1fr); }
-  .hist-side, .pg-start-side { position: static; height: auto; }
-  .pg-toc { height: auto; max-height: none; margin-top: 0; }
-  .pg-toc .pg-chapters { max-height: var(--space-24); }
+  .hist, .hist-page, .pg-start-body { grid-template-columns: minmax(0, 1fr); }
+  .hist-side, .pg-scope-card { position: static; height: auto; }
   .pg-gallery.open { grid-template-columns: minmax(0, 1fr); }
   .pg-gallery.open .pg-preview { order: -1; position: static; max-height: none; }
   .pg-thumb-zoom { opacity: 1; }
@@ -585,48 +581,93 @@ td .badge { margin-left: var(--space-4); }
 .pg-scope-btn:hover { border-color: var(--color-palette-7); }
 .pg-scope-btn strong { color: var(--color-palette-2); font-weight: var(--font-weight-600); }
 .pg-scope-change { flex: none; color: var(--color-palette-7); font-weight: var(--font-weight-600); }
-/* vista inicial del playground (libro y alcance): página con page-head, columna de libros como la del historial
-   y una tarjeta con el alcance; la página se desplaza entera, sin marco ni pie de modal */
-.pg-start { display: grid; grid-template-columns: var(--layout-dialog-side) minmax(0, 1fr); gap: var(--space-12); align-items: start; }
-/* columna: libros arriba y el índice del libro activo debajo; ocupa como mucho la pantalla y cada lista se desplaza sola */
-.pg-start-side {
-  display: flex; flex-direction: column; gap: var(--space-9); position: sticky; top: var(--space-9); min-width: 0;
-  height: calc(100vh - 2 * var(--space-9));
-}
-/* índice: alto fijo y anclado abajo; los libros ocupan lo que queda arriba */
-.pg-toc {
-  display: flex; flex-direction: column; gap: var(--space-5); flex: none; height: var(--layout-toc); max-height: 60%; margin-top: auto;
-  padding-top: var(--space-7); border-top: var(--layout-line) solid var(--color-palette-14);
-}
-.pg-toc .pg-chapters { flex: 1 1 auto; min-height: 0; max-height: none; align-content: start; }
-.pg-toc-empty { padding: 0 var(--space-7); }
-/* modos de alcance como pestañas tabs-1 del handoff (radiogroup: aria-checked marca la elegida) */
-.pg-modes button[aria-checked="true"] { color: var(--color-palette-2); border-bottom-color: var(--color-palette-7); }
-.pg-toc .pg-chapters button { font-size: var(--font-size-200); line-height: var(--font-line-height-5); padding-right: var(--space-5); }
-.pg-toc .pg-chapters button.lvl-2 { padding-left: var(--space-11); }
-.pg-toc .pg-chapters button.lvl-3 { padding-left: var(--space-13); font-size: var(--font-size-100); line-height: var(--font-line-height-3); }
-.pg-start-side > * { min-width: 0; }
-.pg-start-side .pg-books { flex: 1 1 auto; min-height: 0; }
-.pg-start-side .alert { padding: var(--space-5) var(--space-7); }
-.pg-start-main { align-content: start; }
-.pg-scope-head {
-  display: flex; align-items: center; justify-content: space-between; gap: var(--space-9); flex-wrap: wrap;
-  position: sticky; top: 0; z-index: 1; margin: calc(-1 * var(--space-12)) calc(-1 * var(--space-12)) 0;
-  padding: var(--space-9) var(--space-12); background: var(--color-surface);
-  border-bottom: var(--layout-line) solid var(--color-palette-14); border-radius: var(--radius-4) var(--radius-4) 0 0;
-}
-/* libro activo: nombre (h2) y una línea de datos; lo que requiere atención como etiqueta */
-.pg-book-head { display: grid; gap: var(--space-3); min-width: 0; flex: 1 1 var(--layout-scope-btn); }
+/* vista inicial del playground en tres pasos: libro (desplegable arriba), alcance (tarjetas de opción a la izquierda)
+   y revisión de páginas (galería a la derecha); una barra fija abajo resume y lanza la evaluación */
+.pg-start { display: grid; gap: var(--space-9); }
+.pg-start-top { display: flex; align-items: center; justify-content: space-between; gap: var(--space-7); flex-wrap: wrap; }
+.pg-eyebrow { color: var(--color-text-secondary); font-size: var(--font-size-200); line-height: var(--font-line-height-5); font-weight: var(--font-weight-500); }
+.pg-eyebrow strong { color: var(--color-primary); font-weight: var(--font-weight-600); }
+.pg-start-body { display: grid; grid-template-columns: var(--layout-dialog-side) minmax(0, 1fr); gap: var(--space-9); align-items: start; }
+/* libro: desplegable con el nombre grande y una línea de datos; a su lado bloques y avisos */
+.pg-book-line { display: flex; align-items: center; gap: var(--space-9); flex-wrap: wrap; }
 .pg-book-meta {
   display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3) var(--space-7);
   color: var(--color-text-secondary); font-size: var(--font-size-200); line-height: var(--font-line-height-5);
 }
 .pg-book-meta .badge { padding: 0 var(--space-5); }
-/* lo que entra en el proceso, justo encima de la galería */
-.pg-gallery-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-7); flex-wrap: wrap; }
-.pg-gallery-bar strong { color: var(--color-palette-2); font-weight: var(--font-weight-600); }
-.pg-gallery-bar .check { align-items: center; font-size: var(--font-size-200); line-height: var(--font-line-height-5); }
-.pg-gallery-bar .check input { margin: 0; }
+.pg-picker { position: relative; min-width: 0; width: min(100%, var(--layout-preview)); }
+.pg-picker-btn {
+  display: flex; align-items: center; gap: var(--space-7); width: 100%; padding: var(--space-4) var(--space-7);
+  border: var(--layout-line) solid var(--color-palette-13); border-radius: var(--radius-4); background: var(--color-surface);
+  box-shadow: var(--shadow-5); font: inherit; text-align: left; cursor: pointer; color: var(--color-palette-2);
+  transition: border-color var(--layout-speed);
+}
+.pg-picker-btn:hover, .pg-picker-btn[aria-expanded="true"] { border-color: var(--color-palette-11); }
+.pg-picker-btn > svg { flex: none; width: var(--space-9); height: var(--space-9); color: var(--color-palette-6); }
+.pg-picker-text { display: grid; min-width: 0; flex: 1 1 auto; }
+.pg-picker-text strong { font-size: var(--font-size-400); line-height: var(--font-line-height-7); font-weight: var(--font-weight-600); }
+.pg-picker-text small {
+  color: var(--color-text-secondary); font-size: var(--font-size-100); line-height: var(--font-line-height-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pg-picker-pop {
+  position: absolute; z-index: 3; left: 0; right: 0; top: calc(100% + var(--space-3)); display: grid; gap: var(--space-5);
+  padding: var(--space-5); background: var(--color-surface); border: var(--layout-line) solid var(--color-palette-13);
+  border-radius: var(--radius-4); box-shadow: var(--shadow-4);
+}
+.pg-picker-pop .pg-books { max-height: var(--layout-editor); }
+.pg-book small { font-size: var(--font-size-100); }
+/* «N páginas sin texto · ver»: aviso pulsable que filtra la galería */
+.pg-warn-chip {
+  display: inline-flex; align-items: center; gap: var(--space-3); padding: 0 var(--space-5); cursor: pointer;
+  border: var(--layout-line) solid var(--color-palette-2); border-radius: var(--radius-full); background: var(--color-surface);
+  color: var(--color-palette-2); font: inherit; font-size: var(--font-size-200); line-height: var(--font-line-height-5); font-weight: var(--font-weight-600);
+}
+.pg-warn-chip:hover { background: var(--color-palette-16); }
+.pg-warn-chip svg { width: var(--space-7); height: var(--space-7); }
+/* 2 · alcance: tarjetas de opción con radio; la elegida se despliega con sus campos */
+.pg-scope-card { position: sticky; top: var(--space-9); padding: var(--space-9); gap: var(--space-7); }
+.pg-opts { display: grid; gap: var(--space-5); }
+.pg-opt { border: var(--layout-line) solid var(--color-palette-13); border-radius: var(--radius-4); background: var(--color-surface); transition: border-color var(--layout-speed); }
+.pg-opt:hover { border-color: var(--color-palette-11); }
+.pg-opt.on { border-color: var(--color-primary); box-shadow: inset 0 0 0 var(--layout-line) var(--color-primary); background: var(--color-palette-17); }
+.pg-opt-head { display: flex; align-items: flex-start; gap: var(--space-5); padding: var(--space-7); cursor: pointer; }
+.pg-opt-head input { flex: none; width: var(--space-9); height: var(--space-9); margin: var(--space-1) 0 0; accent-color: var(--color-primary); }
+.pg-opt-text { display: grid; flex: 1 1 auto; min-width: 0; }
+.pg-opt-text strong { font-size: var(--font-size-200); line-height: var(--font-line-height-5); font-weight: var(--font-weight-600); }
+.pg-opt-text small { color: var(--color-text-secondary); font-size: var(--font-size-100); line-height: var(--font-line-height-3); }
+.pg-opt-n { flex: none; color: var(--color-palette-6); font-size: var(--font-size-200); line-height: var(--font-line-height-5); font-variant-numeric: tabular-nums; }
+.pg-opt.on .pg-opt-n { color: var(--color-primary); font-weight: var(--font-weight-600); }
+.pg-opt-body { display: grid; gap: var(--space-5); padding: 0 var(--space-7) var(--space-7); }
+.pg-opt-body select { text-overflow: ellipsis; }
+.pg-opt-note { padding: 0 var(--space-3); }
+.pg-range { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: end; gap: var(--space-5); }
+.pg-range > span { padding-bottom: var(--space-5); color: var(--color-palette-6); }
+/* 3 · revisar páginas: título y, a la derecha, filtros y tamaño */
+.pg-review { padding: var(--space-9); }
+.pg-review-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-7); flex-wrap: wrap; }
+.pg-review-head .row { gap: var(--space-7); }
+/* barra fija al pie: lo que se procesa, el método y el botón; ocupa todo el ancho del contenido */
+.pg-run-bar {
+  position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: var(--space-7) var(--space-12);
+  flex-wrap: wrap; margin-bottom: calc(-1 * var(--space-19)); padding: var(--space-7) 0;
+  background: var(--color-surface); border-top: var(--layout-line) solid var(--color-palette-13);
+  box-shadow: 0 0 0 100vmax var(--color-surface); clip-path: inset(0 -100vmax);
+}
+.pg-run-sum { display: flex; align-items: baseline; gap: var(--space-3) var(--space-7); flex-wrap: wrap; min-width: 0; flex: 1 1 auto;
+  color: var(--color-palette-6); font-size: var(--font-size-200); line-height: var(--font-line-height-5); }
+.pg-run-n { color: var(--color-palette-2); font-size: var(--font-size-400); line-height: var(--font-line-height-7); font-weight: var(--font-weight-600); white-space: nowrap; }
+.pg-run-warn { display: inline-flex; align-items: center; gap: var(--space-3); color: var(--color-palette-2); font-weight: var(--font-weight-500); }
+.pg-run-warn svg { width: var(--space-7); height: var(--space-7); }
+.pg-run-act { display: flex; align-items: center; gap: var(--space-7); flex-wrap: wrap; }
+.pg-method {
+  display: inline-flex; align-items: center; gap: var(--space-3); padding-left: var(--space-5);
+  border: var(--layout-line) solid var(--color-palette-13); border-radius: var(--radius-2); background: var(--color-surface);
+  color: var(--color-palette-6); font-size: var(--font-size-200); line-height: var(--font-line-height-5);
+}
+.pg-method select { width: auto; border: 0; padding-left: 0; font-size: var(--font-size-200); font-weight: var(--font-weight-600); background: transparent; }
+.pg-run-est { font-variant-numeric: tabular-nums; }
+.btn.pg-run-go { height: var(--layout-btn-lg); padding: 0 var(--space-9); font-size: var(--font-size-300); }
 /* tamaño de miniatura: grupo de botones discretos, el elegido con fondo */
 .pg-size { display: inline-flex; gap: var(--space-1); padding: var(--space-1); border-radius: var(--radius-2); background: var(--color-palette-16); }
 .pg-size button {
@@ -640,8 +681,8 @@ td .badge { margin-left: var(--space-4); }
 .pg-gallery { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-9); align-items: start; }
 .pg-gallery.open { grid-template-columns: minmax(0, 1fr) var(--layout-preview); }
 .pg-preview {
-  position: sticky; top: calc(var(--layout-scope-head) + var(--space-7)); display: grid; gap: var(--space-7); min-width: 0;
-  max-height: calc(100vh - var(--layout-scope-head) - 2 * var(--space-9)); overflow: auto;
+  position: sticky; top: var(--space-9); display: grid; gap: var(--space-7); min-width: 0;
+  max-height: calc(100vh - var(--space-24)); overflow: auto;
 }
 .pg-preview-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-7); }
 .pg-preview-head strong { font-size: var(--font-size-300); line-height: var(--font-line-height-6); font-weight: var(--font-weight-600); }
@@ -704,47 +745,6 @@ td .badge { margin-left: var(--space-4); }
   content: ""; position: absolute; left: var(--space-3); top: var(--space-4); bottom: var(--space-4);
   width: var(--space-2); border-radius: var(--radius-full); background: var(--color-primary);
 }
-/* campos con label-control encima (12px/500) y ayuda en gris alineada con el campo */
-/* pestañas de modo y sus campos en una sola fila: la línea inferior de las pestañas recorre toda la barra */
-.pg-scope-bar {
-  display: flex; align-items: stretch; flex-wrap: wrap; column-gap: var(--space-12); row-gap: var(--space-5);
-  border-bottom: var(--layout-line) solid var(--color-palette-14);
-}
-.pg-scope-bar > .tabs { border-bottom: 0; flex: none; }
-.pg-scope-mode { display: flex; align-items: center; gap: var(--space-9); flex-wrap: wrap; flex: 1 1 auto; min-width: 0; padding: var(--space-3) 0; }
-.pg-scope-mode > .muted { display: inline-flex; align-items: center; font-size: var(--font-size-200); line-height: var(--font-line-height-5); }
-/* campos compactos: etiqueta a la izquierda y caja numérica del alto de un botón */
-.pg-scope-fields label.control { display: inline-flex; align-items: center; gap: var(--space-5); }
-.pg-scope-fields .pg-num {
-  width: var(--space-19); min-height: var(--layout-button); height: var(--layout-button); padding: 0 var(--space-5);
-  font-size: var(--font-size-200); line-height: var(--font-line-height-5);
-}
-.pg-scope-mode .muted strong { color: var(--color-palette-2); font-weight: var(--font-weight-600); margin: 0 var(--space-2); }
-.pg-scope-fields { display: flex; align-items: center; gap: var(--space-9); flex-wrap: wrap; }
-.pg-scope-fields .muted { min-height: var(--layout-control); display: inline-flex; align-items: center; }
-.pg-chapters {
-  list-style: none; margin: 0; padding: 0; width: 100%; max-height: var(--layout-editor); overflow: auto;
-  display: grid; gap: var(--space-2);
-}
-.pg-chapters button {
-  position: relative; display: flex; flex-direction: column; gap: 0; width: 100%; padding: var(--space-4) var(--space-7) var(--space-4) var(--space-9);
-  border: 0; border-radius: var(--radius-2); background: transparent; font: inherit; font-size: var(--font-size-300); line-height: var(--font-line-height-6);
-  color: var(--color-palette-2); text-align: left; cursor: pointer;
-  transition: background var(--layout-speed), color var(--layout-speed);
-}
-/* jerarquía: capítulo (600, oscuro, con separador), sección (sangría, normal) y subsección (más sangría, gris y menor) */
-.pg-chapters li:has(> .lvl-1):not(:first-child) { margin-top: var(--space-3); padding-top: var(--space-3); border-top: var(--layout-line) solid var(--color-palette-14); }
-.pg-chapters button.lvl-1 { font-weight: var(--font-weight-600); }
-.pg-chapters button.lvl-2 { padding-left: var(--space-13); }
-.pg-chapters button.lvl-3 { padding-left: var(--space-18); color: var(--color-text-secondary); font-size: var(--font-size-200); line-height: var(--font-line-height-5); }
-.pg-chapter-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pg-chapters button:hover { background: var(--color-palette-17); }
-.pg-chapters button[aria-selected="true"] { background: var(--color-palette-16); color: var(--color-palette-2); font-weight: var(--font-weight-500); }
-.pg-chapters small {
-  color: var(--color-text-secondary); font-size: var(--font-size-100); line-height: var(--font-line-height-3);
-  font-weight: var(--font-weight-400); font-variant-numeric: tabular-nums;
-}
-.pg-chapters button:hover small, .pg-chapters button[aria-selected="true"] small { color: var(--color-palette-2); }
 .pg-thumbs {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--layout-thumb), 1fr)); min-width: 0; grid-auto-rows: max-content;
   gap: var(--space-5); align-content: start;
@@ -760,12 +760,19 @@ td .badge { margin-left: var(--space-4); }
 .pg-thumb img { display: block; width: 100%; height: auto; aspect-ratio: 2 / 3; object-fit: contain; }
 .pg-thumb:hover { border-color: var(--color-palette-11); }
 .pg-thumb.sel { border-color: var(--color-palette-7); }
+/* marca de página en el alcance: círculo con check arriba a la derecha */
+.pg-thumb-check {
+  position: absolute; right: var(--space-3); top: var(--space-3); display: inline-grid; place-items: center;
+  width: var(--space-9); height: var(--space-9); border-radius: var(--radius-full); background: var(--color-palette-7); color: var(--color-surface);
+}
+.pg-thumb-check svg { width: var(--space-6); height: var(--space-6); }
+.pg-thumb-tag svg { width: var(--space-6); height: var(--space-6); vertical-align: middle; }
 .pg-thumb.anchor { border-color: var(--color-primary); }
 .pg-thumb.empty img { opacity: 0.45; }
 .pg-thumb.viewing { box-shadow: 0 0 0 var(--layout-focus) var(--color-palette-11); }
 /* lupa: aparece al pasar el ratón o con el foco; abre la página en el visor */
 .pg-thumb-zoom {
-  position: absolute; right: var(--space-3); top: var(--space-3); display: inline-grid; place-items: center;
+  position: absolute; left: var(--space-3); bottom: var(--space-3); display: inline-grid; place-items: center;
   width: var(--layout-btn); height: var(--layout-btn); padding: 0; border: 0; border-radius: var(--radius-1); cursor: pointer;
   background: var(--color-palette-19); color: var(--color-palette-2); box-shadow: inset 0 0 0 var(--layout-line) var(--color-palette-13);
   opacity: 0; transition: opacity var(--layout-speed);

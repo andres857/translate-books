@@ -16,7 +16,7 @@ import { IconCheck, IconHourglass, IconUpload, IconWarn, IconX } from "../../com
 import { Panel, type PanelColumn } from "./panel";
 import { ScopeView, type ScopeValue } from "./scope-view";
 import {
-  DEFAULTS, duration, fmtN, LABELS, MAX_VARIANTS, pageFromSegments, parsePages, sameConfig, toInput, variantName,
+  DEFAULTS, duration, fmtN, LABELS, MAX_VARIANTS, modelId, pageFromSegments, parsePages, sameConfig, toInput, variantName,
   type ColId, type LocalVariant,
 } from "./shared";
 import { Stage, type Column } from "./stage";
@@ -154,7 +154,10 @@ export default function PlaygroundPage() {
       .then((chs) => {
         setChapters(chs);
         if (!choosing) return;
-        if (chs.length) setScope("chapter");
+        if (chs.length) {
+          setScope("chapter");
+          setChapter("0");
+        }
         else {
           setScope("pages");
           setPagesSpec(`1-${Math.min(10, count)}`);
@@ -295,6 +298,13 @@ export default function PlaygroundPage() {
 
   function setVariant(label: string, changes: Partial<VariantInput>) {
     setVariants((vs) => vs.map((v) => (v.label === label ? { ...v, ...changes } : v)));
+  }
+
+  // método de la primera variante, elegido en la barra de la vista inicial
+  function setMethod(m: string) {
+    setVariants((vs) => vs.map((v, i) => (i > 0 ? v : m === "fake"
+      ? { ...DEFAULTS.fake, prompt: v.prompt, label: v.label }
+      : { ...DEFAULTS.deepseek, thinking: v.provider === "deepseek" ? v.thinking : "disabled", model: m, prompt: v.prompt, label: v.label })));
   }
 
   function addVariant() {
@@ -662,7 +672,9 @@ export default function PlaygroundPage() {
     <main className="wide">
       <ScopeView books={books} bookId={bookId} onBook={changeBook} onDeleteBook={deleteBook} chapters={chapters}
         value={scopeValue} onChange={setScopeValue} estimate={estimate} estimateError={estimateError}
-        onContinue={() => { setScopeOpen(false); setEntered(true); }}
+        method={variants[0]?.provider === "fake" ? "fake" : modelId(variants[0]?.model)} onMethod={setMethod}
+        variantCount={variants.length} busy={busy}
+        onContinue={() => { setScopeOpen(false); setEntered(true); void start(); }}
         onBack={entered ? () => setScopeOpen(false) : undefined}
         upload={uploadArea}
         uploadAction={(
