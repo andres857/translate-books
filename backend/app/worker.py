@@ -17,7 +17,9 @@ from app.glossary_service import effective_glossary, save_auto
 from app.db.session import SessionLocal
 from app.pipeline.digitize import DigitizeOptions, run_digitize
 from app.pipeline.epub import build_epub_for_job
-from app.pipeline.runner import Cancelled, PipelineOptions, prepare_book, recompose_page, run_pipeline
+from app.pipeline.protect import Protector
+from app.pipeline.runner import (Cancelled, PipelineOptions, discover_book_glossary, prepare_book, recompose_page,
+                                 run_pipeline)
 from app import playground, runtime_settings
 from app.pipeline.translate import FatalAPIError
 from app.pipeline.types import ensure_unique_keys
@@ -29,7 +31,7 @@ STAGE_WEIGHTS = {"analyze": (0, 4), "ocr": (4, 10), "protect": (10, 12), "glossa
                  "rebuild": (78, 93), "validate": (93, 100)}
 # modo digitalizar (OCR sin traducir); sin corrección con el modelo, la etapa "correct" no aparece
 # modo preparar (Playground): solo análisis, OCR y protección; sin traducir ni maquetar
-PREPARE_WEIGHTS = {"analyze": (0, 40), "ocr": (40, 95), "protect": (95, 100)}
+PREPARE_WEIGHTS = {"analyze": (0, 35), "ocr": (35, 85), "protect": (85, 88), "glossary": (88, 100)}
 DIGITIZE_WEIGHTS = {"analyze": (0, 2), "ocr": (2, 60), "correct": (60, 85), "compose": (85, 98),
                     "validate": (98, 100)}
 
@@ -136,8 +138,8 @@ def process(job_id: int) -> None:
                                detect_names=rs.provider != "fake",
                                # el glosario se descubre una vez por libro; después se revisa en Términos
                                discover_glossary=rs.provider != "fake" and not has_auto, domain=doc.domain or "")
-        if prepare:  # sin traductor: preparar no necesita llave ni llama a ningún modelo
-            process_prepare(s, job, terms, opts, progress, should_stop)
+        if prepare:  # no traduce: el modelo solo se usa (si hay llave) para generar el glosario del libro
+            process_prepare(s, job, rs, terms, opts, progress, should_stop)
             return
         translator = runtime_settings.make_translator(rs)
         if options.get("recompose"):
@@ -203,16 +205,36 @@ def process_recompose(s, job: Job, options: dict, translator, terms, glossary, o
     s.commit()
 
 
-def process_prepare(s, job: Job, terms, opts, progress, should_stop) -> None:
-    """Prepara un libro para el Playground: guarda páginas y bloques (con su protección) sin traducir nada."""
+def process_prepare(s, job: Job, rs, terms, opts, progress, should_stop) -> None:
+    """Prepara un libro para el Playground: guarda páginas y bloques (con su protección) sin traducir nada y,
+    si el libro aún no tiene glosario descubierto, lo genera para que las evaluaciones ya lo usen."""
     log.info("Trabajo %s: preparar para el Playground (sin traducir)", job.id)
     book = prepare_book(Path(job.document.path), terms, opts, progress, should_stop)
     save_results(s, job, book.pages)
     job.document.title = book.title
+    s.commit()  # los bloques quedan guardados aunque falle el glosario
+    if opts.discover_glossary:
+        prepare_glossary(s, job, rs, terms, book, opts, progress)
     job.status, job.stage, job.progress, job.current_page = "done", "done", 100.0, None
     s.commit()
     log.info("Trabajo %s preparado: %s páginas, %s bloques", job.id, len(book.pages),
              sum(1 for p in book.pages for sg in p.segments if sg.action == "translate"))
+
+
+def prepare_glossary(s, job: Job, rs, terms, book, opts, progress) -> None:
+    """Glosario del libro al prepararlo. Si falla (sin llave, sin saldo...) el libro queda preparado igual y el
+    glosario se puede generar después desde Términos."""
+    try:
+        translator = runtime_settings.make_translator(rs)
+        segments = [sg for p in book.pages for sg in p.segments]
+        domain, proposals = discover_book_glossary(segments, Protector(terms), translator, book.title,
+                                                   opts.concurrency, lambda d, t: progress("glossary", d, t, None))
+        n = save_auto(s, job.document, domain, proposals)
+        s.commit()
+        log.info("Trabajo %s: glosario con %s términos (%s)", job.id, n, domain or "sin especialidad")
+    except Exception:  # noqa: BLE001
+        s.rollback()
+        log.exception("Trabajo %s: no se pudo generar el glosario al preparar", job.id)
 
 
 def process_digitize(s, job: Job, rs, options: dict, progress, should_stop) -> None:

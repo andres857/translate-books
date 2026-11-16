@@ -33,7 +33,7 @@ DIGITIZE_STAGES = [("upload", "Carga"), ("analyze", "Análisis"), ("ocr", "OCR")
                    ("compose", "Maquetación"), ("validate", "Validación"), ("done", "Descarga")]
 # preparar para el Playground: se extrae la información del libro sin traducir nada
 PREPARE_STAGES = [("upload", "Carga"), ("analyze", "Análisis"), ("ocr", "OCR"), ("protect", "Protección"),
-                  ("done", "Listo para evaluar")]
+                  ("glossary", "Glosario"), ("done", "Listo para evaluar")]
 
 
 def _job_or_404(db: Session, job_id: int) -> Job:

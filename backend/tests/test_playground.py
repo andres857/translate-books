@@ -438,3 +438,38 @@ def test_glossary_auto_entries_review_and_effective_glossary(db, book):
     assert r["origin"] == "manual" and r["target"] == "Corregente"
     assert c.get(f"/api/documents/{doc_id}/glossary/discover").json()["domain"] == "astrología"
     assert c.post("/api/documents/999999/glossary/discover").status_code == 404
+
+
+def test_prepare_generates_glossary_and_tolerates_failure(db, book, monkeypatch):
+    from app import runtime_settings as rsmod
+    from app import worker
+    from app.db.models import GlossaryEntry, Job
+    from app.pipeline.runner import PipelineOptions, PreparedBook
+    from app.pipeline.translate import FakeTranslator
+    from app.pipeline.types import PageInfo, Segment as Seg, Style
+
+    segs = [Seg(key=f"p{n:03d}_s001", page_no=n, bbox=(0, 0, 1, 1), line_rects=[], style=Style(),
+                text=txt, html=txt, protected=txt)
+            for n, txt in ((1, "Pluto co-rules Scorpio"), (2, "Jupiter co-rules Pisces"))]
+    prepared = PreparedBook([PageInfo(number=1, width=10, height=10, rotation=0, kind="digital", segments=segs)], "Astro", [])
+
+    class Terminologist(FakeTranslator):
+        def extract_glossary(self, payload):
+            return {"domain": "astrología", "terms": [{"source": "co-rules", "target": "Corregente de"}]}
+
+    stages = []
+    progress = lambda st, d, t, p: stages.append(st)  # noqa: E731
+    with db() as s:
+        job = s.get(Job, book)
+        monkeypatch.setattr(rsmod, "make_translator", lambda rs, prompts=None: Terminologist())
+        worker.prepare_glossary(s, job, None, {}, prepared, PipelineOptions(concurrency=1), progress)
+        rows = s.query(GlossaryEntry).filter_by(document_id=job.document_id).all()
+        assert [(g.source, g.target, g.origin) for g in rows] == [("co-rules", "Corregente de", "auto")]
+        assert job.document.domain == "astrología" and "glossary" in stages
+
+        def no_key(rs, prompts=None):
+            raise RuntimeError("Falta DEEPSEEK_API_KEY")
+
+        monkeypatch.setattr(rsmod, "make_translator", no_key)
+        worker.prepare_glossary(s, job, None, {}, prepared, PipelineOptions(concurrency=1), progress)  # no lanza
+        assert s.query(GlossaryEntry).filter_by(document_id=job.document_id).count() == 1

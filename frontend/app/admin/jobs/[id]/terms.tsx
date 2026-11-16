@@ -98,8 +98,8 @@ export function Terms({ documentId }: { documentId: number }) {
       <section className="card" aria-labelledby="glossary-title">
         <h2 id="glossary-title">Glosario</h2>
         <p className="muted">
-          Cómo debe traducirse siempre un término. Al traducir un libro por primera vez se genera su glosario con el
-          modelo (entradas «auto»); corrige aquí lo que no te convenza: lo corregido pasa a «manual» y no se sustituye.
+          Cómo debe traducirse siempre un término. Al preparar o traducir un libro por primera vez se genera su glosario
+          con el modelo (entradas «auto»); corrige aquí lo que no te convenza: lo corregido pasa a «manual» y no se sustituye.
         </p>
         <div className="glossary-discover">
           <span className="muted">
