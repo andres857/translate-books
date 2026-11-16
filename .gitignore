@@ -21,3 +21,4 @@ backend/tests/output/
 # Frontend
 node_modules/
 .next/
+*.tsbuildinfo
