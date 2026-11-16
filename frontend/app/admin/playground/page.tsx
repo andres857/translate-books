@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   cancelRun, composeRun, createRun, estimateRun, getJob, getPrompts, getRun, getRunPage, getSegments, jobPageImageUrl,
-  listChapters, listDrafts, listPlaygroundBooks, listRuns, resumeRun, runPageImageUrl, tryVariantPage, uploadBook,
+  deletePlaygroundBook, listChapters, listDrafts, listPlaygroundBooks, listRuns, resumeRun, runPageImageUrl, tryVariantPage, uploadBook,
   voteRunPage, type Chapter, type JobStatus, type Estimate, type PlaygroundBook, type PlaygroundRun, type PlaygroundScope, type PlaygroundTask,
   type PromptDraft, type RunPage, type VariantInput,
 } from "@/lib/api";
@@ -273,11 +273,24 @@ export default function PlaygroundPage() {
   // ------------------------------------------------------------------ acciones
   const fail = (e: unknown) => setNotice({ kind: "error", text: (e as Error).message });
 
-  function changeBook(id: number) {
+  function changeBook(id: number | null) {
     setBookId(id);
     setRun(null);
     setPageIdx(0);
     setSel(null);
+  }
+
+  // borra el libro y su análisis en cascada; si era el activo, pasa al primero que quede
+  async function deleteBook(b: PlaygroundBook) {
+    await deletePlaygroundBook(b.id);
+    const list = await listPlaygroundBooks();
+    setBooks(list);
+    if (bookId === b.id) {
+      changeBook(list[0]?.id ?? null);
+      setEntered(false);
+    }
+    refreshRuns();
+    setNotice({ kind: "ok", text: `Se eliminó «${b.name}» con todo su análisis.` });
   }
 
   function setVariant(label: string, changes: Partial<VariantInput>) {
@@ -647,7 +660,7 @@ export default function PlaygroundPage() {
   );
   if (scopeOpen) return (
     <main className="wide">
-      <ScopeView books={books} bookId={bookId} onBook={changeBook} chapters={chapters}
+      <ScopeView books={books} bookId={bookId} onBook={changeBook} onDeleteBook={deleteBook} chapters={chapters}
         value={scopeValue} onChange={setScopeValue} estimate={estimate} estimateError={estimateError}
         onContinue={() => { setScopeOpen(false); setEntered(true); }}
         onBack={entered ? () => setScopeOpen(false) : undefined}

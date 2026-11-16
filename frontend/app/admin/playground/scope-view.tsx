@@ -8,7 +8,7 @@ import {
   jobPageImageUrl, listPlaygroundPages, type Chapter, type Estimate, type PlaygroundBook, type PlaygroundPageInfo,
   type PlaygroundScope,
 } from "@/lib/api";
-import { IconArrowLeft, IconArrowRight, IconWarn, IconX, IconZoom } from "../../components/art";
+import { IconArrowLeft, IconArrowRight, IconTrash, IconWarn, IconX, IconZoom } from "../../components/art";
 import { duration, fmtN, parsePages } from "./shared";
 
 type Mode = "chapter" | "range" | "page" | "book";
@@ -46,6 +46,7 @@ interface Props {
   books: PlaygroundBook[];
   bookId: number | null;
   onBook: (id: number) => void;
+  onDeleteBook: (b: PlaygroundBook) => Promise<void>; // tras confirmar: borra el libro y su análisis
   chapters: Chapter[];
   value: ScopeValue;
   onChange: (v: Partial<ScopeValue>) => void;
@@ -77,6 +78,10 @@ export function ScopeView(p: Props) {
   const [pages, setPages] = useState<PlaygroundPageInfo[]>([]);
   const [anchor, setAnchor] = useState<number | null>(null);
   const [bookQuery, setBookQuery] = useState("");
+  // confirmación de borrado en línea, bajo la fila del libro (no hay modal medido en el handoff)
+  const [confirmDel, setConfirmDel] = useState<number | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [delError, setDelError] = useState<string | null>(null);
   const [onlySelected, setOnlySelected] = useState(false); // galería: solo las páginas que entran en el alcance
   const [size, setSize] = useState<Size>("s");
   const [preview, setPreview] = useState<number | null>(null); // página abierta en el visor junto a la galería
@@ -254,11 +259,47 @@ export function ScopeView(p: Props) {
             {p.books.length === 0 && <li className="muted">Aún no hay libros preparados: sube uno.</li>}
             {visibleBooks.length === 0 && p.books.length > 0 && <li className="muted">Ningún libro coincide.</li>}
             {visibleBooks.map((b) => (
-              <li key={b.id}>
+              <li key={b.id} className="pg-book-row">
                 <button type="button" role="option" aria-selected={b.id === p.bookId}
                   title={`${b.name} · ${fmtN.format(b.page_count)} págs.`} className="pg-book" onClick={() => p.onBook(b.id)}>
                   {b.name}
                 </button>
+                <button type="button" className="btn ghost pg-icon pg-book-del" aria-label={`Eliminar ${b.name}`}
+                  title="Eliminar libro" aria-expanded={confirmDel === b.id}
+                  onClick={() => { setDelError(null); setConfirmDel(confirmDel === b.id ? null : b.id); }}>
+                  <IconTrash />
+                </button>
+                {confirmDel === b.id && (
+                  <div className="alert error pg-book-confirm" role="alertdialog" aria-labelledby={`pg-del-${b.id}`}
+                    onKeyDown={(e) => { if (e.key === "Escape" && !deleting) setConfirmDel(null); }}>
+                    <IconWarn />
+                    <div>
+                      <strong id={`pg-del-${b.id}`}>¿Eliminar «{b.name}»?</strong>
+                      <p>Se borra todo su análisis: páginas y bloques, las evaluaciones del playground con su historial
+                        y PDFs, y el PDF subido si ningún otro libro lo usa. No se puede deshacer.</p>
+                      {delError && <p role="alert">{delError}</p>}
+                      <div className="pg-book-confirm-actions">
+                        <button type="button" className="btn" autoFocus disabled={deleting} onClick={async () => {
+                          setDeleting(true);
+                          setDelError(null);
+                          try {
+                            await p.onDeleteBook(b);
+                            setConfirmDel(null);
+                          } catch (e) {
+                            setDelError((e as Error).message);
+                          } finally {
+                            setDeleting(false);
+                          }
+                        }}>
+                          <IconTrash /> {deleting ? "Eliminando…" : "Eliminar"}
+                        </button>
+                        <button type="button" className="btn secondary" disabled={deleting} onClick={() => setConfirmDel(null)}>
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </li>
             ))}
           </ul>

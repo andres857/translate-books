@@ -96,6 +96,23 @@ def books(db: Session = Depends(get_db)):
             for j in jobs]
 
 
+@router.delete("/playground/books/{job_id}")
+def delete_book(job_id: int, db: Session = Depends(get_db)):
+    """Elimina un libro del playground y todo lo de su análisis: páginas y bloques, evaluaciones con su
+    historial y PDFs, y la salida en disco. Si el documento no tiene otro análisis, también se borra
+    (con su glosario y términos propios, y el PDF subido si ningún otro documento lo comparte)."""
+    job = _job_done(db, job_id)
+    busy = db.scalar(select(func.count(PlaygroundRun.id)).where(
+        PlaygroundRun.job_id == job.id, PlaygroundRun.status.in_(("queued", "running"))))
+    if busy:
+        raise HTTPException(409, "Hay una evaluación en curso con este libro: espera a que termine o cancélala.")
+    removed = pg.delete_job(db, job)
+    db.commit()
+    for path in removed:  # después del commit: si la BD falla, los archivos siguen ahí
+        pg.remove_path(path)
+    return {"ok": True}
+
+
 def _job_done(db: Session, job_id: int) -> Job:
     job = db.get(Job, job_id)
     if not job or job.status != "done":

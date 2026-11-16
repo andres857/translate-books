@@ -357,3 +357,52 @@ def test_api(db, book, monkeypatch):
     assert free["needs_confirm"] is False
     assert c.post("/api/admin/playground/runs", json={**body, "variants": []}).status_code == 400
     assert c.delete(f"/api/admin/prompt-drafts/{d['id']}").status_code == 200
+
+
+def test_delete_book_removes_analysis_in_cascade(db, book, tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app.db.models import (Document, GlossaryEntry, Job, Page, PlaygroundAttempt, PlaygroundRun, ProtectedTerm,
+                               Segment)
+    from app.main import app
+
+    outputs = tmp_path / "outputs"
+    monkeypatch.setattr(pg, "run_dir", lambda run_id: outputs / "playground" / f"run_{run_id}")
+    monkeypatch.setattr(pg, "get_settings", lambda: type("S", (), {"outputs_dir": outputs,
+                                                                    "uploads_dir": tmp_path / "uploads"})())
+    with db() as s:
+        job = s.get(Job, book)
+        doc_id = job.document_id
+        run = PlaygroundRun(job_id=book, task="translate", pages="1", variants=[], status="done", results=[])
+        s.add(run)
+        s.flush()
+        run_id = run.id
+        s.add(PlaygroundAttempt(run_id=run.id, job_id=book, label="A", kind="run", pages="1"))
+        s.add(GlossaryEntry(source="chart", target="carta", document_id=doc_id))
+        s.add(ProtectedTerm(term="MC", category="term", origin="manual", document_id=doc_id))
+        s.commit()
+    (outputs / "playground" / f"run_{run_id}").mkdir(parents=True)
+    (outputs / f"job_{book}").mkdir(parents=True)
+
+    c = TestClient(app)
+    with db() as s:  # con una evaluación en curso no se borra
+        s.get(PlaygroundRun, run_id).status = "running"
+        s.commit()
+    assert c.delete(f"/api/admin/playground/books/{book}").status_code == 409
+    with db() as s:
+        s.get(PlaygroundRun, run_id).status = "done"
+        s.commit()
+
+    r = c.delete(f"/api/admin/playground/books/{book}")
+    assert r.status_code == 200, r.text
+    with db() as s:
+        assert s.get(Job, book) is None and s.get(Document, doc_id) is None
+        assert not s.scalar(select(func.count(Page.id)).where(Page.job_id == book))
+        assert not s.scalar(select(func.count(Segment.id)).where(Segment.page_id.not_in(select(Page.id))))
+        assert not s.scalar(select(func.count(PlaygroundRun.id)).where(PlaygroundRun.job_id == book))
+        assert not s.scalar(select(func.count(PlaygroundAttempt.id)).where(PlaygroundAttempt.job_id == book))
+        assert not s.scalar(select(func.count(GlossaryEntry.id)).where(GlossaryEntry.document_id == doc_id))
+        assert not s.scalar(select(func.count(ProtectedTerm.id)).where(ProtectedTerm.document_id == doc_id))
+    assert not (outputs / "playground" / f"run_{run_id}").exists() and not (outputs / f"job_{book}").exists()
+    assert c.delete(f"/api/admin/playground/books/{book}").status_code == 404
+    assert all(b["id"] != book for b in c.get("/api/admin/playground/books").json())

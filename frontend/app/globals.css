@@ -2,6 +2,7 @@
 
 /* Medidas propias de maquetación (el handoff permite escribirlas a mano, en un bloque aparte) */
 :root {
+  --color-danger: #d92d20; /* handoff-allow: el paquete no trae rojo; acciones destructivas (eliminar) */
   --layout-nav: 272px;      /* nav-2 */
   --layout-nav-row: 32px;   /* altura de enlace nav-2 */
   --layout-nav-icon: 20px;  /* caja del icono nav-2 */
@@ -680,6 +681,15 @@ td .badge { margin-left: var(--space-4); }
 /* libros como lista compacta de una línea (escala a cientos): el elegido con fondo y barra de acento */
 .pg-books { list-style: none; margin: 0; padding: 0; display: grid; align-content: start; gap: var(--space-1); flex: 1 1 auto; min-height: 0; overflow: auto; }
 .pg-books li { min-width: 0; }
+/* fila de libro: nombre + papelera al final; la confirmación ocupa la fila de abajo */
+.pg-book-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--space-1); }
+.pg-book-row .pg-book-del { color: var(--color-danger); opacity: 0; transition: opacity var(--layout-speed); }
+.pg-book-row:hover .pg-book-del, .pg-book-row:focus-within .pg-book-del,
+.pg-book-del[aria-expanded="true"] { opacity: 1; }
+@media (hover: none) { .pg-book-row .pg-book-del { opacity: 1; } }
+.pg-book-confirm { grid-column: 1 / -1; margin: var(--space-3) 0 var(--space-4); padding: var(--space-5) var(--space-7); }
+.pg-book-confirm p { margin: var(--space-2) 0 0; font-size: var(--font-size-200); line-height: var(--font-line-height-5); }
+.pg-book-confirm-actions { display: flex; flex-wrap: wrap; gap: var(--space-4); margin-top: var(--space-5); }
 .pg-books .muted { padding: var(--space-4) var(--space-7); }
 .pg-book {
   position: relative; display: block; width: 100%; padding: var(--space-4) var(--space-7) var(--space-4) var(--space-9);

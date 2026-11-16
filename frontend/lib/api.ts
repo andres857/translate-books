@@ -495,6 +495,11 @@ export async function deleteDraft(id: number): Promise<void> {
   await parse(await fetch(`/api/admin/prompt-drafts/${id}`, { method: "DELETE" }));
 }
 
+/** Elimina el libro y todo su análisis (páginas, bloques, evaluaciones y sus PDFs). */
+export async function deletePlaygroundBook(jobId: number): Promise<void> {
+  await parse(await fetch(`/api/admin/playground/books/${jobId}`, { method: "DELETE" }));
+}
+
 export async function listPlaygroundBooks(): Promise<PlaygroundBook[]> {
   return parse(await fetch("/api/admin/playground/books", { cache: "no-store" }));
 }

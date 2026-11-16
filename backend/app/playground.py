@@ -19,7 +19,8 @@ from sqlalchemy import func, select, text
 
 from app import runtime_settings
 from app.config import get_settings
-from app.db.models import GlossaryEntry, Job, Page, PlaygroundAttempt, PlaygroundRun, PromptDraft, Segment
+from app.db.models import (Document, GlossaryEntry, Job, Page, PlaygroundAttempt, PlaygroundRun, PromptDraft,
+                           ProtectedTerm, Segment)
 from app.db.session import SessionLocal
 from app.pipeline.digitize import correct_segments
 from app.pipeline.protect import Protector
@@ -447,6 +448,51 @@ def compose_result(s, run: PlaygroundRun, job: Job, res: dict, pages: list[int],
 
 
 ATTEMPT_CFG = ("provider", "model", "thinking", "prompt", "prompt_name", "prompt_text")
+
+
+def delete_job(s, job: Job) -> list[Path]:
+    """Borra de la BD el análisis de un libro (sin commit): evaluaciones e intentos, páginas y bloques (en cascada)
+    y el trabajo; y el documento si no le queda otro análisis. Devuelve las rutas en disco que hay que borrar."""
+    paths: list[Path] = [get_settings().outputs_dir / f"job_{job.id}"]
+    paths += [Path(p) for p in (job.output_path, job.report_path) if p]
+    runs = s.scalars(select(PlaygroundRun).where(PlaygroundRun.job_id == job.id)).all()
+    paths += [run_dir(r.id) for r in runs]
+    for a in s.scalars(select(PlaygroundAttempt).where(PlaygroundAttempt.job_id == job.id)):
+        if a.pdf:
+            paths.append(Path(a.pdf))
+        s.delete(a)
+    s.flush()
+    for r in runs:
+        s.delete(r)
+    doc = job.document
+    s.delete(job)  # páginas y bloques caen en cascada
+    s.flush()
+    if doc is not None and not s.scalar(select(func.count(Job.id)).where(Job.document_id == doc.id)):
+        for model in (GlossaryEntry, ProtectedTerm):
+            for row in s.scalars(select(model).where(model.document_id == doc.id)):
+                s.delete(row)
+        shared = s.scalar(select(func.count(Document.id)).where(Document.sha256 == doc.sha256, Document.id != doc.id))
+        if not shared and doc.path:
+            paths.append(Path(doc.path).parent)  # carpeta uploads/<sha>
+        s.delete(doc)
+    return paths
+
+
+def remove_path(path: Path) -> None:
+    """Borra un archivo o carpeta de salida; solo dentro de las carpetas de datos de la app."""
+    st = get_settings()
+    roots = [Path(st.outputs_dir).resolve(), Path(st.uploads_dir).resolve()]
+    try:
+        p = path.resolve()
+        if not any(p != r and p.is_relative_to(r) for r in roots):
+            log.warning("No se borra %s: está fuera de las carpetas de datos", p)
+            return
+        if p.is_dir():
+            shutil.rmtree(p, ignore_errors=True)
+        elif p.exists():
+            p.unlink()
+    except OSError:
+        log.warning("No se pudo borrar %s", path, exc_info=True)
 
 
 def attempts_dir(run_id: int) -> Path:
