@@ -14,6 +14,7 @@ export const IconHome = (p: P) => (
 export const IconChevron = (p: P) => <svg {...icon(p)}><path d="m6 9 6 6 6-6" /></svg>;
 export const IconArrowLeft = (p: P) => <svg {...icon(p)}><path d="M19 12H5M11 6l-6 6 6 6" /></svg>;
 export const IconArrowRight = (p: P) => <svg {...icon(p)}><path d="M5 12h14M13 6l6 6-6 6" /></svg>;
+export const IconZoom = (p: P) => <svg {...icon(p)}><circle cx="11" cy="11" r="6" /><path d="m20 20-4.5-4.5M11 8v6M8 11h6" /></svg>;
 export const IconX = (p: P) => <svg {...icon(p)}><path d="M6 6l12 12M18 6 6 18" /></svg>;
 export const IconCheck = (p: P) => <svg {...icon(p)}><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>;
 export const IconDownload = (p: P) => <svg {...icon(p)}><path d="M12 4v11M7 10l5 5 5-5M5 20h14" /></svg>;
