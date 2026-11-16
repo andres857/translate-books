@@ -273,7 +273,14 @@ export async function recomposePage(id: string | number, page: number): Promise<
 }
 
 export interface ProtectedTerm { id: number; term: string; category: string; origin: string; document_id: number | null }
-export interface GlossaryEntry { id: number; source: string; target: string; document_id: number | null }
+export interface GlossaryEntry {
+  id: number; source: string; target: string; document_id: number | null;
+  origin: "auto" | "manual"; category: string | null; note: string | null;
+}
+export interface GlossaryDiscovery {
+  status: "idle" | "running" | "done" | "failed"; domain: string | null; done?: number; total?: number;
+  count?: number; cost_usd?: number | null; error?: string;
+}
 
 const json = (method: string, body?: unknown): RequestInit => ({
   method,
@@ -299,10 +306,19 @@ export async function addGlossary(source: string, target: string, documentId: nu
 export async function deleteGlossary(id: number): Promise<{ ok: boolean }> {
   return parse(await fetch(`/api/glossary/${id}`, json("DELETE")));
 }
+export async function editGlossary(id: number, patch: { target?: string; note?: string }): Promise<GlossaryEntry> {
+  return parse(await fetch(`/api/glossary/${id}`, json("PATCH", patch)));
+}
+export async function glossaryDiscovery(documentId: number): Promise<GlossaryDiscovery> {
+  return parse(await fetch(`/api/documents/${documentId}/glossary/discover`, { cache: "no-store" }));
+}
+export async function discoverGlossary(documentId: number): Promise<GlossaryDiscovery> {
+  return parse(await fetch(`/api/documents/${documentId}/glossary/discover`, json("POST")));
+}
 
 // ------------------------------------------------------------------ Administración › Prompts y Playground
 
-export type PromptTask = "translate" | "correct" | "shorten" | "names";
+export type PromptTask = "translate" | "correct" | "shorten" | "names" | "glossary";
 export type PlaygroundTask = "translate" | "correct";
 
 export interface PromptInfo {

@@ -24,7 +24,7 @@ def test_correct_prompt_rendering_unchanged():
 
 
 def test_registry_lists_all_tasks():
-    assert set(tr.PROMPTS) == {"translate", "correct", "shorten", "names"}
+    assert set(tr.PROMPTS) == {"translate", "correct", "shorten", "names", "glossary"}
     assert tr.PROMPTS["translate"]["text"] == tr.SYSTEM_PROMPT
     assert tr.PROMPTS["translate"]["version"] == tr.PROMPT_VERSION
     assert tr.PROMPTS["correct"]["version"] == tr.CORRECT_PROMPT_VERSION

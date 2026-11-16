@@ -25,7 +25,8 @@ from app.storage.keys import generate_key
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
-STAGES = [("upload", "Carga"), ("analyze", "Análisis"), ("ocr", "OCR"), ("protect", "Protección"), ("translate", "Traducción"),
+STAGES = [("upload", "Carga"), ("analyze", "Análisis"), ("ocr", "OCR"), ("protect", "Protección"), ("glossary", "Glosario"),
+          ("translate", "Traducción"),
           ("rebuild", "Maquetación"), ("validate", "Validación"), ("done", "Descarga")]
 STAGE_INDEX = {k: i for i, (k, _) in enumerate(STAGES)}
 DIGITIZE_STAGES = [("upload", "Carga"), ("analyze", "Análisis"), ("ocr", "OCR"), ("correct", "Corrección"),

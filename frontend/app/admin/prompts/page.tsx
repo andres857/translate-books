@@ -5,7 +5,7 @@ import Link from "next/link";
 import { getPrompts, listDrafts, type PromptDraft, type PromptInfo, type PromptTask } from "@/lib/api";
 import { IconCheck, IconCopy, IconWarn } from "../../components/art";
 
-const ORDER: PromptTask[] = ["translate", "correct", "shorten", "names"];
+const ORDER: PromptTask[] = ["translate", "correct", "shorten", "names", "glossary"];
 const MODE: Record<PromptInfo["mode"], string> = { translate: "Traducir libro", digitize: "Solo digitalizar" };
 
 function CopyButton({ text }: { text: string }) {

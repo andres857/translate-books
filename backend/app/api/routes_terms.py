@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app import glossary_service
 from app.db.models import Document, GlossaryEntry, ProtectedTerm
 from app.db.session import get_db
 
@@ -18,6 +19,17 @@ class GlossaryIn(BaseModel):
     source: str = Field(min_length=1, max_length=512)
     target: str = Field(min_length=1, max_length=512)
     document_id: int | None = None
+    note: str | None = Field(default=None, max_length=500)
+
+
+class GlossaryPatch(BaseModel):
+    target: str | None = Field(default=None, min_length=1, max_length=512)
+    note: str | None = Field(default=None, max_length=500)
+
+
+def _glossary_row(g: GlossaryEntry) -> dict:
+    return {"id": g.id, "source": g.source, "target": g.target, "document_id": g.document_id,
+            "origin": g.origin or "manual", "category": g.category, "note": g.note}
 
 
 def _check_document(db: Session, document_id: int | None) -> None:
@@ -60,14 +72,14 @@ def list_glossary(document_id: int | None = None, db: Session = Depends(get_db))
     q = db.query(GlossaryEntry)
     if document_id is not None:
         q = q.filter((GlossaryEntry.document_id.is_(None)) | (GlossaryEntry.document_id == document_id))
-    return [{"id": g.id, "source": g.source, "target": g.target, "document_id": g.document_id}
-            for g in q.order_by(GlossaryEntry.source)]
+    return [_glossary_row(g) for g in q.order_by(GlossaryEntry.source)]
 
 
 @router.post("/glossary")
 def add_glossary(body: GlossaryIn, db: Session = Depends(get_db)):
     _check_document(db, body.document_id)
-    g = GlossaryEntry(source=body.source.strip(), target=body.target.strip(), document_id=body.document_id)
+    g = GlossaryEntry(source=body.source.strip(), target=body.target.strip(), document_id=body.document_id,
+                      origin="manual", note=(body.note or "").strip() or None)
     db.add(g)
     db.commit()
     return {"id": g.id}
@@ -81,3 +93,38 @@ def delete_glossary(entry_id: int, db: Session = Depends(get_db)):
     db.delete(g)
     db.commit()
     return {"ok": True}
+
+
+@router.patch("/glossary/{entry_id}")
+def edit_glossary(entry_id: int, body: GlossaryPatch, db: Session = Depends(get_db)):
+    """Corregir una entrada; una descubierta que se corrige pasa a manual (ya no se sustituye al redescubrir)."""
+    g = db.get(GlossaryEntry, entry_id)
+    if not g:
+        raise HTTPException(404, "Entrada no encontrada.")
+    if body.target is not None and body.target.strip() != g.target:
+        g.target, g.origin = body.target.strip(), "manual"
+    if body.note is not None:
+        g.note = body.note.strip() or None
+    db.commit()
+    return _glossary_row(g)
+
+
+@router.get("/documents/{document_id}/glossary/discover")
+def discover_status(document_id: int, db: Session = Depends(get_db)):
+    doc = db.get(Document, document_id)
+    if doc is None:
+        raise HTTPException(404, "Ese libro no existe.")
+    return {**glossary_service.status(document_id), "domain": doc.domain}
+
+
+@router.post("/documents/{document_id}/glossary/discover", status_code=202)
+def discover(document_id: int, db: Session = Depends(get_db)):
+    """Vuelve a generar el glosario descubierto del libro con el modelo (sustituye solo las entradas 'auto')."""
+    doc = db.get(Document, document_id)
+    if doc is None:
+        raise HTTPException(404, "Ese libro no existe.")
+    if glossary_service.source_job(db, doc) is None:
+        raise HTTPException(409, "Primero analiza o traduce el libro: no hay bloques guardados.")
+    if not glossary_service.start_discovery(document_id):
+        raise HTTPException(409, "Ya se está generando el glosario de este libro.")
+    return glossary_service.status(document_id)

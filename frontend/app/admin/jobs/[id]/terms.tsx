@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  addGlossary, addTerm, deleteGlossary, deleteTerm, listGlossary, listTerms, type GlossaryEntry, type ProtectedTerm,
+  addGlossary, addTerm, deleteGlossary, deleteTerm, discoverGlossary, editGlossary, glossaryDiscovery, listGlossary,
+  listTerms, type GlossaryDiscovery, type GlossaryEntry, type ProtectedTerm,
 } from "@/lib/api";
-import { IconPlus, IconTrash, IconWarn } from "../../../components/art";
+import { IconCheck, IconPlus, IconTrash, IconWand, IconWarn, IconX } from "../../../components/art";
 
 const CATEGORY: Record<string, string> = { NAME: "Nombre propio", BRAND: "Marca", CODE: "Código", TERM: "Término" };
 
@@ -14,6 +15,8 @@ export function Terms({ documentId }: { documentId: number }) {
   const [error, setError] = useState<string | null>(null);
   const [g, setG] = useState({ source: "", target: "", scope: "book" });
   const [t, setT] = useState({ term: "", category: "NAME", scope: "book" });
+  const [disc, setDisc] = useState<GlossaryDiscovery | null>(null);
+  const [editing, setEditing] = useState<{ id: number; target: string } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -29,6 +32,48 @@ export function Terms({ documentId }: { documentId: number }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  // estado del descubrimiento (va en segundo plano): se consulta mientras esté en marcha
+  useEffect(() => {
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = async () => {
+      try {
+        const d = await glossaryDiscovery(documentId);
+        if (!alive) return;
+        setDisc((prev) => {
+          if (prev?.status === "running" && d.status !== "running") load();
+          return d;
+        });
+        if (d.status === "running") timer = setTimeout(poll, 2000);
+      } catch {
+        /* sin estado: el botón sigue disponible */
+      }
+    };
+    if (!disc || disc.status === "running") poll();
+    return () => {
+      alive = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, [documentId, disc?.status, load]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function discover() {
+    try {
+      setDisc(await discoverGlossary(documentId));
+      setError(null);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function saveEdit() {
+    if (!editing || !editing.target.trim()) return;
+    await run(() => editGlossary(editing.id, { target: editing.target }));
+    setEditing(null);
+  }
+
+  const autoCount = glossary.filter((x) => x.origin === "auto").length;
+  const running = disc?.status === "running";
 
   async function run(action: () => Promise<unknown>) {
     try {
@@ -52,7 +97,34 @@ export function Terms({ documentId }: { documentId: number }) {
 
       <section className="card" aria-labelledby="glossary-title">
         <h2 id="glossary-title">Glosario</h2>
-        <p className="muted">Cómo debe traducirse siempre un término.</p>
+        <p className="muted">
+          Cómo debe traducirse siempre un término. Al traducir un libro por primera vez se genera su glosario con el
+          modelo (entradas «auto»); corrige aquí lo que no te convenza: lo corregido pasa a «manual» y no se sustituye.
+        </p>
+        <div className="glossary-discover">
+          <span className="muted">
+            Especialidad: <strong>{disc?.domain || "sin detectar"}</strong> · {autoCount} entradas auto
+          </span>
+          <button type="button" className="btn ghost" disabled={running} onClick={discover}>
+            <IconWand /> {running ? "Generando glosario…" : autoCount ? "Volver a generar" : "Generar glosario"}
+          </button>
+        </div>
+        {running && (
+          <p className="muted" role="status">
+            Analizando términos del libro{disc?.total ? ` (lote ${disc.done ?? 0} de ${disc.total})` : ""}. Tarda uno o
+            dos minutos y cuesta unos céntimos.
+          </p>
+        )}
+        {disc?.status === "done" && (
+          <div className="alert ok" role="status"><IconCheck />
+            <span>
+              Glosario generado: {disc.count ?? 0} términos
+              {typeof disc.cost_usd === "number" ? ` (costo aprox. ${disc.cost_usd.toFixed(3)} USD)` : ""}. Se sustituyen
+              solo las entradas auto.
+            </span>
+          </div>
+        )}
+        {disc?.status === "failed" && <div className="alert error" role="alert"><IconWarn /><span>{disc.error}</span></div>}
         <form className="form-grid" onSubmit={(e) => {
           e.preventDefault();
           if (!g.source.trim() || !g.target.trim()) return;
@@ -74,12 +146,36 @@ export function Terms({ documentId }: { documentId: number }) {
         </form>
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Inglés</th><th>Español</th><th>Se aplica a</th><th><span className="muted">Acciones</span></th></tr></thead>
+            <thead>
+              <tr><th>Inglés</th><th>Español</th><th>Origen</th><th>Se aplica a</th><th><span className="muted">Acciones</span></th></tr>
+            </thead>
             <tbody>
               {glossary.map((x) => (
                 <tr key={x.id}>
-                  <td className="wrap">{x.source}</td>
-                  <td className="wrap">{x.target}</td>
+                  <td className="wrap">
+                    {x.source}
+                    {x.category && <div className="muted">{x.category}</div>}
+                  </td>
+                  <td className="wrap">
+                    {editing?.id === x.id ? (
+                      <form className="glossary-edit" onSubmit={(e) => { e.preventDefault(); saveEdit(); }}>
+                        <input aria-label={`Traducción de ${x.source}`} value={editing.target} autoFocus
+                          onChange={(e) => setEditing({ id: x.id, target: e.target.value })}
+                          onKeyDown={(e) => { if (e.key === "Escape") setEditing(null); }} />
+                        <button className="btn ghost" type="submit" aria-label="Guardar" disabled={!editing.target.trim()}>
+                          <IconCheck />
+                        </button>
+                        <button className="btn ghost" type="button" aria-label="Cancelar" onClick={() => setEditing(null)}>
+                          <IconX />
+                        </button>
+                      </form>
+                    ) : (
+                      <button type="button" className="glossary-target" title="Editar traducción"
+                        onClick={() => setEditing({ id: x.id, target: x.target })}>{x.target}</button>
+                    )}
+                    {x.note && <div className="muted">{x.note}</div>}
+                  </td>
+                  <td><span className={`badge ${x.origin === "auto" ? "info" : "ok"}`}>{x.origin === "auto" ? "auto" : "manual"}</span></td>
                   <td>{scopeOf(x.document_id)}</td>
                   <td>
                     <button type="button" className="btn ghost" aria-label={`Quitar ${x.source} del glosario`}
@@ -87,7 +183,7 @@ export function Terms({ documentId }: { documentId: number }) {
                   </td>
                 </tr>
               ))}
-              {glossary.length === 0 && <tr><td colSpan={4}>El glosario está vacío.</td></tr>}
+              {glossary.length === 0 && <tr><td colSpan={5}>El glosario está vacío.</td></tr>}
             </tbody>
           </table>
         </div>

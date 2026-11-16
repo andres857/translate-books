@@ -822,3 +822,17 @@ td .badge { margin-left: var(--space-4); }
   .pg-start-side .pg-books { max-height: var(--space-24); }
   .pg-scope-head { margin: calc(-1 * var(--space-9)) calc(-1 * var(--space-9)) 0; padding: var(--space-7) var(--space-9); }
 }
+
+/* ---------- glosario (pestaña Términos) */
+.glossary-discover {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-5);
+  margin: var(--space-5) 0;
+}
+.glossary-discover strong { color: var(--color-text-primary); font-weight: var(--font-weight-600); }
+.glossary-edit { display: flex; align-items: center; gap: var(--space-3); }
+.glossary-edit input { min-width: 0; flex: 1; }
+.glossary-target {
+  background: none; border: 0; padding: 0; text-align: left; cursor: text; color: inherit;
+  border-bottom: var(--layout-line) dashed var(--color-palette-11);
+}
+.glossary-target:hover, .glossary-target:focus-visible { color: var(--color-primary); border-bottom-color: var(--color-primary); }

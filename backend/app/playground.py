@@ -22,6 +22,7 @@ from app.config import get_settings
 from app.db.models import (Document, GlossaryEntry, Job, Page, PlaygroundAttempt, PlaygroundRun, PromptDraft,
                            ProtectedTerm, Segment)
 from app.db.session import SessionLocal
+from app.glossary_service import effective_glossary
 from app.pipeline.digitize import correct_segments
 from app.pipeline.protect import Protector
 from app.pipeline.runner import Cancelled, PipelineOptions, run_pipeline
@@ -316,7 +317,7 @@ def run_variant(v: dict, task: str, rows, ctx: dict, should_stop, on_progress, c
         if task == "translate":
             translate_segments(segs, rec, cache, Protector(), ctx["glossary"], ctx["title"], concurrency,
                                max_chars=BATCH_CHARS[task], max_items=BATCH_ITEMS, on_progress=on_progress,
-                               should_stop=should_stop, reprotect=False)
+                               should_stop=should_stop, reprotect=False, domain=ctx.get("domain", ""))
             outputs = {s.key: {"output": s.translation, "issues": list(s.issues)} for s in segs}
         else:
             correct_segments(segs, rec, cache, ctx["lang"], concurrency, max_chars=BATCH_CHARS[task],
@@ -561,8 +562,7 @@ def execute(run_id: int) -> None:
         pages = parse_pages(run.pages, book_pages(s, job) or 10**6)
         doc = job.document
         ctx = {"title": doc.title or "", "lang": (job.options or {}).get("ocr_lang", "en"),
-               "glossary": {g.source: g.target for g in s.scalars(select(GlossaryEntry).where(
-                   (GlossaryEntry.document_id.is_(None)) | (GlossaryEntry.document_id == doc.id)))}}
+               "glossary": effective_glossary(s, doc.id)[0], "domain": doc.domain or ""}
         state = dict(run.state or {})
         caches = dict(state.get("caches") or {})
         usage = dict(state.get("usage") or {})

@@ -16,6 +16,7 @@ import pymupdf
 
 from app.pipeline.analyze import analyze
 from app.pipeline.fonts import FontResolver
+from app.pipeline.glossary import GlossaryProposal, discover_glossary, mine_candidates
 from app.pipeline.ocr import ocr_available, ocr_segments
 from app.pipeline.protect import Protector
 from app.pipeline.rebuild import rebuild
@@ -50,6 +51,8 @@ class PipelineOptions:
     detect_names: bool = True
     ocr: bool = True
     visual_check: bool = True
+    discover_glossary: bool = False  # el libro aún no tiene glosario descubierto: se genera antes de traducir
+    domain: str = ""  # especialidad ya conocida del libro (glosario descubierto antes)
 
 
 @dataclass
@@ -60,6 +63,8 @@ class PipelineResult:
     pages: list[PageInfo] = field(default_factory=list)
     title: str = ""
     title_es: str = ""
+    domain: str = ""
+    glossary_auto: list[GlossaryProposal] = field(default_factory=list)  # descubierto en esta pasada
 
 
 def _plain(h: str | None) -> str:
@@ -176,6 +181,25 @@ def _analyze_and_ocr(doc: pymupdf.Document, opts: PipelineOptions, tick, report_
     return pages
 
 
+def merge_glossary(glossary: dict[str, str], proposals: list[GlossaryProposal]) -> dict[str, str]:
+    """Glosario efectivo: las entradas manuales ganan a las descubiertas (sin distinguir mayúsculas)."""
+    taken = {k.lower() for k in glossary}
+    return {**{p.source: p.target for p in proposals if p.source.lower() not in taken}, **glossary}
+
+
+def discover_book_glossary(segments: list[Segment], protector: Protector, translator, title: str,
+                           concurrency: int, on_progress=None) -> tuple[str, list[GlossaryProposal]]:
+    """Minería local de términos repetidos + el terminólogo elige los de traducción fija."""
+    if on_progress:
+        on_progress(0, 1)
+    candidates = mine_candidates(segments)
+    log.info("Glosario: %s candidatos", len(candidates))
+    domain, entries = discover_glossary(candidates, title, translator, concurrency,
+                                        protected=set(protector.terms), on_progress=on_progress)
+    log.info("Glosario: especialidad %r, %s términos", domain, len(entries))
+    return domain, entries
+
+
 def run_pipeline(
     input_pdf: Path,
     out_dir: Path,
@@ -228,14 +252,27 @@ def run_pipeline(
     report_extra["terminos_protegidos_categorias"] = dict(sorted(protector.terms.items()))
     tick("protect", 1, 1)
 
-    # ---------------------------------------------------------------- traducción
     segments = [s for p in pages for s in p.segments]
     title_segs, subtitle_seg = _title_segments(pages, doc)
     title = doc.metadata.get("title") or " ".join(s.text for s in title_segs)
+
+    # ---------------------------------------------------------------- glosario
+    glossary = dict(glossary or {})
+    domain, glossary_auto = opts.domain, []
+    if opts.discover_glossary:
+        domain, glossary_auto = discover_book_glossary(
+            segments, protector, translator, title, opts.concurrency, lambda d, t: tick("glossary", d, t))
+        domain = domain or opts.domain
+        glossary = merge_glossary(glossary, glossary_auto)
+        report_extra["glosario_descubierto"] = len(glossary_auto)
+    if domain:
+        report_extra["especialidad"] = domain
+
+    # ---------------------------------------------------------------- traducción
     stats = translate_segments(
-        segments, translator, cache, protector, glossary=glossary or {}, title=title,
+        segments, translator, cache, protector, glossary=glossary, title=title,
         concurrency=opts.concurrency, max_chars=opts.batch_chars, max_items=opts.batch_items,
-        on_progress=lambda d, t: tick("translate", d, t), should_stop=should_stop,
+        on_progress=lambda d, t: tick("translate", d, t), should_stop=should_stop, domain=domain,
     )
     if should_stop and should_stop():
         raise Cancelled()
@@ -295,7 +332,7 @@ def run_pipeline(
     report_path = out_dir / "reporte-traduccion.json"
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     tick("validate", 1, 1)
-    return PipelineResult(out_pdf, report_path, report, pages, title, title_es)
+    return PipelineResult(out_pdf, report_path, report, pages, title, title_es, domain, glossary_auto)
 
 
 def recompose_page(
@@ -318,6 +355,7 @@ def recompose_page(
     opts = options or PipelineOptions()
     opts.only_pages = {page_no}
     opts.detect_names = False  # los nombres detectados en la primera pasada llegan en protected_terms
+    opts.discover_glossary = False  # el glosario descubierto llega en glossary
     terms = dict(protected_terms or {})
     report: dict = {}
     if report_path and Path(report_path).exists():

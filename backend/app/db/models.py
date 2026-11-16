@@ -26,6 +26,8 @@ class Document(Base):
     page_count: Mapped[int] = mapped_column(Integer, default=0)
     title: Mapped[str | None] = mapped_column(Text)
     title_es: Mapped[str | None] = mapped_column(Text)
+    # especialidad detectada al descubrir el glosario (p. ej. "astrología occidental"); va al prompt
+    domain: Mapped[str | None] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     jobs: Mapped[list[Job]] = relationship(back_populates="document")
@@ -123,6 +125,9 @@ class GlossaryEntry(Base):
     source: Mapped[str] = mapped_column(String(512))
     target: Mapped[str] = mapped_column(String(512))
     document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id"))
+    origin: Mapped[str] = mapped_column(String(16), default="manual", server_default="manual")  # auto | manual
+    category: Mapped[str | None] = mapped_column(String(32))
+    note: Mapped[str | None] = mapped_column(Text)
 
 
 class TranslationCache(Base):

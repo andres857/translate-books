@@ -317,7 +317,7 @@ def test_api(db, book, monkeypatch):
     from app.main import app
 
     c = TestClient(app)
-    assert set(c.get("/api/admin/prompts").json()) == {"translate", "correct", "shorten", "names"}
+    assert set(c.get("/api/admin/prompts").json()) == {"translate", "correct", "shorten", "names", "glossary"}
     d = c.post("/api/admin/prompt-drafts", json={"task": "translate", "name": "Más literal", "text": "P1"}).json()
     assert c.put(f"/api/admin/prompt-drafts/{d['id']}", json={"text": "P2"}).json()["text"] == "P2"
     assert c.post("/api/admin/prompt-drafts", json={"task": "x", "name": "n", "text": "t"}).status_code == 400
@@ -406,3 +406,35 @@ def test_delete_book_removes_analysis_in_cascade(db, book, tmp_path, monkeypatch
     assert not (outputs / "playground" / f"run_{run_id}").exists() and not (outputs / f"job_{book}").exists()
     assert c.delete(f"/api/admin/playground/books/{book}").status_code == 404
     assert all(b["id"] != book for b in c.get("/api/admin/playground/books").json())
+
+
+def test_glossary_auto_entries_review_and_effective_glossary(db, book):
+    from fastapi.testclient import TestClient
+
+    from app.db.models import GlossaryEntry, Job
+    from app.glossary_service import effective_glossary, save_auto, source_job
+    from app.main import app
+    from app.pipeline.glossary import GlossaryProposal
+
+    with db() as s:
+        doc = s.get(Job, book).document
+        s.add(GlossaryEntry(source="sun sign", target="signo del sol", document_id=doc.id, origin="manual"))
+        s.flush()
+        n = save_auto(s, doc, "astrología", [GlossaryProposal("Sun sign", "signo solar"),
+                                             GlossaryProposal("Co-rules", "Corregente de", "regencia", "compartida")])
+        s.commit()
+        assert n == 1  # la manual no se duplica
+        glossary, has_auto = effective_glossary(s, doc.id)
+        assert has_auto and glossary["sun sign"] == "signo del sol" and glossary["Co-rules"] == "Corregente de"
+        assert "Sun sign" not in glossary
+        assert source_job(s, doc) is not None
+        doc_id = doc.id
+        auto_id = s.query(GlossaryEntry).filter_by(document_id=doc_id, origin="auto").one().id
+
+    c = TestClient(app)
+    rows = {r["source"]: r for r in c.get(f"/api/glossary?document_id={doc_id}").json()}
+    assert rows["Co-rules"]["origin"] == "auto" and rows["Co-rules"]["note"] == "compartida"
+    r = c.patch(f"/api/glossary/{auto_id}", json={"target": "Corregente"}).json()
+    assert r["origin"] == "manual" and r["target"] == "Corregente"
+    assert c.get(f"/api/documents/{doc_id}/glossary/discover").json()["domain"] == "astrología"
+    assert c.post("/api/documents/999999/glossary/discover").status_code == 404

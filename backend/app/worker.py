@@ -12,7 +12,8 @@ from sqlalchemy import select, text
 
 from app.config import get_settings
 from app.db.cache import SqlCache
-from app.db.models import Document, GlossaryEntry, Job, Page, ProtectedTerm, Segment
+from app.db.models import Document, Job, Page, ProtectedTerm, Segment
+from app.glossary_service import effective_glossary, save_auto
 from app.db.session import SessionLocal
 from app.pipeline.digitize import DigitizeOptions, run_digitize
 from app.pipeline.epub import build_epub_for_job
@@ -24,7 +25,7 @@ from app.pipeline.types import ensure_unique_keys
 log = logging.getLogger("worker")
 
 # peso de cada etapa en el progreso global (%)
-STAGE_WEIGHTS = {"analyze": (0, 4), "ocr": (4, 10), "protect": (10, 12), "translate": (12, 78),
+STAGE_WEIGHTS = {"analyze": (0, 4), "ocr": (4, 10), "protect": (10, 12), "glossary": (12, 16), "translate": (16, 78),
                  "rebuild": (78, 93), "validate": (93, 100)}
 # modo digitalizar (OCR sin traducir); sin corrección con el modelo, la etapa "correct" no aparece
 # modo preparar (Playground): solo análisis, OCR y protección; sin traducir ni maquetar
@@ -128,12 +129,13 @@ def process(job_id: int) -> None:
             return
         terms = {t.term: t.category for t in s.scalars(select(ProtectedTerm).where(
             (ProtectedTerm.document_id.is_(None)) | (ProtectedTerm.document_id == doc.id)))}
-        glossary = {g.source: g.target for g in s.scalars(select(GlossaryEntry).where(
-            (GlossaryEntry.document_id.is_(None)) | (GlossaryEntry.document_id == doc.id)))}
+        glossary, has_auto = effective_glossary(s, doc.id)
         opts = PipelineOptions(min_font_scale=st.min_font_scale, min_font_size_pt=st.min_font_size_pt,
                                concurrency=rs.concurrency, batch_chars=st.translation_batch_chars,
                                batch_items=st.translation_batch_max_segments, fonts_dirs=st.fonts_dirs,
-                               detect_names=rs.provider != "fake")
+                               detect_names=rs.provider != "fake",
+                               # el glosario se descubre una vez por libro; después se revisa en Términos
+                               discover_glossary=rs.provider != "fake" and not has_auto, domain=doc.domain or "")
         if prepare:  # sin traductor: preparar no necesita llave ni llama a ningún modelo
             process_prepare(s, job, terms, opts, progress, should_stop)
             return
@@ -146,6 +148,8 @@ def process(job_id: int) -> None:
         result = run_pipeline(Path(doc.path), out_dir, translator, SqlCache(SessionLocal()), terms, glossary,
                               opts, progress, should_stop)
         save_results(s, job, result.pages)
+        if opts.discover_glossary:  # solo si se descubrió en esta pasada (si no, se borraría el revisado)
+            save_auto(s, doc, result.domain, result.glossary_auto)
         doc.title, doc.title_es = result.title, result.title_es
         job.output_path, job.report_path = str(result.output_pdf), str(result.report_path)
         job.status, job.stage, job.progress = "done", "done", 100.0
