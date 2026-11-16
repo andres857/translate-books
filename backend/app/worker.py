@@ -19,6 +19,7 @@ from app.pipeline.epub import build_epub_for_job
 from app.pipeline.runner import Cancelled, PipelineOptions, prepare_book, recompose_page, run_pipeline
 from app import playground, runtime_settings
 from app.pipeline.translate import FatalAPIError
+from app.pipeline.types import ensure_unique_keys
 
 log = logging.getLogger("worker")
 
@@ -72,11 +73,12 @@ def save_results(s, job: Job, pages, only: set[int] | None = None) -> None:
     for info in pages:
         if only is not None and info.number not in only:
             continue
+        ensure_unique_keys(info)  # red de seguridad: un id repetido haría que una traducción pise a otra
         page = Page(job_id=job.id, number=info.number, width=info.width, height=info.height,
                     rotation=info.rotation, kind=info.kind, image_count=info.image_count,
                     drawing_count=info.drawing_count, status="done", needs_review=info.needs_review,
                     review_reasons=info.review_reasons)
-        page.segments = [Segment(seg_key=sg.key, bbox=list(sg.bbox), block_type=sg.block_type,
+        page.segments = [Segment(seg_key=sg.key, bbox=list(sg.bbox), block_type=sg.block_type, role=sg.role,
                                  style=sg.style.to_dict(), source_text=sg.text, source_html=sg.html,
                                  protected_text=sg.protected, placeholders=sg.placeholders,
                                  translation=sg.translation, action=sg.action, status="done",

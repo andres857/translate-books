@@ -24,7 +24,7 @@ from app.pipeline.types import Segment
 
 log = logging.getLogger(__name__)
 
-PROMPT_VERSION = "v6"
+PROMPT_VERSION = "v7"
 
 SYSTEM_PROMPT = """Eres un traductor editorial profesional de inglés a español neutro.
 Traduces segmentos de un libro que luego se colocarán en la misma posición de la página original.
@@ -48,10 +48,17 @@ REGLAS OBLIGATORIAS:
    concisas cuando haya equivalentes igual de correctos, porque el espacio en la página es limitado.
 9. Respeta el glosario proporcionado. Si un segmento trae "context", úsalo solo para entender el
    sentido (p. ej. un título partido en dos bloques: "THE SECRETS OF" + "ASTROLOGY"); no lo traduzcas.
-11. Los segmentos de tipo "heading" y "label" son títulos breves: tradúcelos con la misma brevedad
-    (sin añadir artículos ni palabras innecesarias: "Daily work" -> "Trabajo diario").
 10. Los segmentos de tipo "ocr" se reconocieron desde una imagen y pueden tener errores de reconocimiento
     (letras cambiadas, signos sobrantes como ":" o "|"). Corrígelos al traducir y, si dudas, indícalo en "issues".
+11. Los segmentos de tipo "heading" y "label" son títulos breves: tradúcelos con la misma brevedad
+    (sin añadir artículos ni palabras innecesarias: "Daily work" -> "Trabajo diario").
+12. Los segmentos de tipo "field" son filas de una ficha de datos: una etiqueta seguida de su valor
+    (normalmente el valor va en <b>). No es una frase: traduce la etiqueta como rótulo breve y el valor
+    como dato, sin convertir ninguno en verbo ni unirlos en una oración
+    (ej.: "Day of the week <b>Monday</b>" -> "Día de la semana <b>Lunes</b>").
+13. Si la petición trae "page_context", es todo el texto de una página con infografía o ficha, indexado
+    por número de página (el de los id "p129_…" es 129). Úsalo solo para entender a qué se refiere cada
+    segmento de esa página; no lo traduzcas ni lo devuelvas.
 
 Responde SOLO con JSON con esta forma:
 {"segments": [{"id": "...", "translation": "...", "issues": ["..."], "confidence": 0.0}]}
@@ -253,6 +260,8 @@ class DeepSeekTranslator(PromptMixin):
     def translate_batch(self, items: list[dict], context: dict) -> dict[str, dict]:
         payload = {"book_title": context.get("title", ""), "glossary": context.get("glossary", {}),
                    "segments": items}
+        if context.get("page_context"):
+            payload["page_context"] = context["page_context"]
         user = TRANSLATE_USER_INTRO + "\n" + json.dumps(payload, ensure_ascii=False)
         out = self._chat_json(self.prompt("translate"), user, thinking=self.thinking)
         result = {}
@@ -513,8 +522,12 @@ def _batches(segs: list[Segment], max_chars: int, max_items: int) -> list[list[S
     return batches
 
 
+PAGE_CONTEXT_CHARS = 1500  # tope del texto de página enviado como contexto (una vez por lote)
+
+
 def _item(s: Segment) -> dict:
-    item = {"id": s.key, "type": s.block_type, "text": s.protected}
+    # los campos de ficha se envían con su propio tipo (regla 12 del prompt); block_type no cambia
+    item = {"id": s.key, "type": "field" if s.role == "field" else s.block_type, "text": s.protected}
     if getattr(s, "_context", None):
         item["context"] = s._context
     return item
@@ -589,6 +602,9 @@ def translate_segments(
                 near = [x.text for x in segs[max(0, i - 1):i + 2] if x is not s and len(x.text) <= 120]
                 if near:
                     s._context = " / ".join(near)
+    # infografías y fichas: el texto de toda la página va una vez por lote como "page_context" (regla 13)
+    page_text = {n: " / ".join(x.text.replace("\n", " ") for x in segs)[:PAGE_CONTEXT_CHARS]
+                 for n, segs in by_page.items() if any(x.role in ("field", "figure") for x in segs)}
     grouped = set() if _no_groups else {g.key for grp in _title_groups(targets) for g in grp}
     for s in targets:
         hit = None if s.key in grouped else cache.get(cache_key(translator.model, s.protected, glossary))
@@ -629,8 +645,11 @@ def translate_segments(
 
     def run(batch: list[Segment]) -> tuple[list[Segment], dict[str, dict] | Exception]:
         try:
-            return batch, translator.translate_batch([_item(s) for s in batch],
-                                                     {"title": title, "glossary": glossary_ctx(batch)})
+            ctx = {"title": title, "glossary": glossary_ctx(batch)}
+            pages = {str(s.page_no): page_text[s.page_no] for s in batch if s.page_no in page_text}
+            if pages:
+                ctx["page_context"] = pages
+            return batch, translator.translate_batch([_item(s) for s in batch], ctx)
         except Exception as e:  # noqa: BLE001
             return batch, e
 

@@ -239,7 +239,7 @@ def to_segments(rows: list[tuple[int, Segment]]) -> list[Seg]:
     for n, r in rows:
         segs.append(Seg(key=r.seg_key, page_no=n, bbox=tuple(r.bbox), line_rects=[], style=Style.from_dict(r.style or {}),
                         text=r.source_text or "", html=r.source_html or r.source_text or "",
-                        block_type=r.block_type, action="translate", protected=r.protected_text,
+                        block_type=r.block_type, role=r.role, action="translate", protected=r.protected_text,
                         placeholders=dict(r.placeholders or {})))
     return segs
 

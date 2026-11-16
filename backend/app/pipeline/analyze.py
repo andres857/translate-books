@@ -8,6 +8,7 @@ Trabaja a nivel de carácter (rawdict) para poder separar con precisión:
 from __future__ import annotations
 
 import html
+import logging
 import re
 import statistics
 from dataclasses import dataclass, field
@@ -15,7 +16,9 @@ from functools import cached_property
 
 import pymupdf
 
-from app.pipeline.types import PageInfo, Segment, Style
+from app.pipeline.types import PageInfo, Segment, Style, ensure_unique_keys, key_index
+
+log = logging.getLogger(__name__)
 
 # flags de span en PyMuPDF
 F_ITALIC, F_SERIF, F_MONO, F_BOLD = 2, 4, 8, 16
@@ -303,6 +306,73 @@ def _group_paragraphs(plines: list[PLine], page_width: float = 0.0) -> list[list
     return paragraphs
 
 
+FIELD_LABEL_MAX = 22  # caracteres de una etiqueta de ficha ("Day of the week", "Colours")
+
+
+def _field_kind(line: PLine) -> str | None:
+    """Tipo de línea en una ficha de datos: "LV" (etiqueta normal + valor en negrita hasta el final),
+    "L" (solo etiqueta corta), "V" (solo valor en negrita) o None (no encaja)."""
+    runs: list[list] = []  # [negrita, texto]
+    for ch in line.chars:
+        if ch.style.symbolic:
+            continue
+        if runs and (ch.c.isspace() or runs[-1][0] == ch.style.bold):
+            runs[-1][1] += ch.c
+        elif not ch.c.isspace():
+            runs.append([ch.style.bold, ch.c])
+    runs = [(b, t.strip()) for b, t in runs if t.strip()]
+    if not runs:
+        return None
+    kinds = [b for b, _ in runs]
+    short_label = len(runs[0][1]) <= FIELD_LABEL_MAX and not runs[0][1].endswith((".", "!", "?"))
+    if kinds == [True]:
+        return "V"
+    if kinds == [False]:
+        return "L" if short_label else None
+    if kinds == [False, True]:
+        return "LV" if short_label else None
+    return None
+
+
+def _split_fields(paragraphs: list[list[PLine]]) -> tuple[list[list[PLine]], set[int]]:
+    """Fichas de datos ("Rules  Co-rules Scorpio / Day of the week / No allotted day / Metal  Plutonium"):
+    el agrupador las une en un párrafo y el traductor las lee como frases ("Rige Corrige Escorpio").
+    Se parten en un párrafo por campo (la etiqueta abre campo; las líneas solo en negrita continúan su valor).
+    Devuelve los párrafos y los id() de los que son campos de ficha."""
+    # el agrupador puede haber partido la ficha en varios párrafos ("Rules…/Day of the week" + "No allotted
+    # day/Metal…"): se unen los párrafos seguidos de la misma columna cuyas líneas tienen todas forma de campo
+    runs: list[list[list[PLine]]] = []
+    for para in paragraphs:
+        prev = runs[-1][-1] if runs else None
+        if (prev is not None and None not in (_field_kind(l) for l in para + prev)
+                and round(prev[0].size) == round(para[0].size)
+                and abs(prev[0].rect.x0 - para[0].rect.x0) < 2
+                and 0 < para[0].baseline - prev[-1].baseline <= 1.9 * para[0].size):
+            runs[-1].append(para)
+        else:
+            runs.append([para])
+
+    out: list[list[PLine]] = []
+    fields: set[int] = set()
+    for run in runs:
+        para = [l for p in run for l in p]
+        kinds = [_field_kind(l) for l in para]
+        sizes = {round(l.size) for l in para}
+        if (len(para) < 3 or None in kinds or kinds.count("LV") < 2 or kinds[0] == "V" or len(sizes) > 1):
+            out.extend(run)
+            continue
+        current: list[PLine] = []
+        for line, kind in zip(para, kinds):
+            if kind in ("LV", "L") and current:
+                out.append(current)
+                fields.add(id(current))
+                current = []
+            current.append(line)
+        out.append(current)
+        fields.add(id(current))
+    return out, fields
+
+
 def _alignment(lines: list[PLine], page_width: float) -> str:
     rects = [l.rect for l in lines]
     if len(rects) == 1:
@@ -458,6 +528,32 @@ def _rotated_segments(lines: list[dict], info: PageInfo) -> tuple[list[Segment],
     return segs, curved
 
 
+def _layout_pictures(page: pymupdf.Page) -> list[pymupdf.Rect]:
+    """Zonas que el modelo de layout de PyMuPDF (CPU, ~0,25 s/página) ve como ilustración. El texto que cae
+    dentro es de una infografía o ficha: el traductor lo recibe con el texto de toda la página como contexto."""
+    try:
+        import pymupdf.layout  # noqa: F401  (activa el modelo)
+
+        page.get_layout()
+        boxes = getattr(page, "layout_information", None) or []
+    except Exception:  # noqa: BLE001  el layout es una ayuda: sin él la página se analiza igual
+        log.warning("Layout no disponible en la página %s", page.number + 1, exc_info=True)
+        return []
+    return [pymupdf.Rect(b[:4]) for b in boxes if len(b) >= 5 and b[4] == "picture"]
+
+
+def mark_figures(segments: list[Segment], pictures: list[pymupdf.Rect]) -> None:
+    """role="figure" para los bloques traducibles cuyo centro cae en una ilustración (los campos de ficha
+    conservan su rol, que ya implica contexto de página)."""
+    for sg in segments:
+        if sg.role or sg.action != "translate":
+            continue
+        r = pymupdf.Rect(sg.bbox)
+        center = pymupdf.Point((r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2)
+        if any(center in pic for pic in pictures):
+            sg.role = "figure"
+
+
 def classify_page(page: pymupdf.Page, number: int) -> PageInfo:
     text = page.get_text("text")
     chars = len(re.sub(r"\s", "", text))
@@ -483,7 +579,7 @@ def classify_page(page: pymupdf.Page, number: int) -> PageInfo:
 def extract_segments(page: pymupdf.Page, info: PageInfo) -> list[Segment]:
     plines, rotated = _raw_lines(page)
     vertical_segments, _ = _rotated_segments(rotated, info)
-    paragraphs = _group_paragraphs(plines, info.width)
+    paragraphs, field_ids = _split_fields(_group_paragraphs(plines, info.width))
     sizes = [p.size for p in plines if not _is_keep_text(p.text)]
     body_size = statistics.median(sizes) if sizes else 10.0
     keep_lines_end_num = sum(1 for p in plines if p.text.strip().isdigit())
@@ -543,6 +639,8 @@ def extract_segments(page: pymupdf.Page, info: PageInfo) -> list[Segment]:
         seg = Segment(key=f"p{info.number:03d}_s{idx:03d}", page_no=info.number, bbox=tuple(rect),
                       line_rects=line_rects, style=style, text=plain, html=htm, block_type=btype,
                       baseline=round(para[0].baseline, 2))
+        if id(para) in field_ids:
+            seg.role = "field"
         if _is_keep_text(plain) or all(l.symbolic for l in para):
             seg.action = "keep"
         segments.append(seg)
@@ -582,13 +680,13 @@ def extract_segments(page: pymupdf.Page, info: PageInfo) -> list[Segment]:
     words = [t for t in leftovers if re.search(r"[^\W\d_]{3,}", t)]
     if words:
         info.flag(f"Texto en curva o inclinado conservado sin traducir: {', '.join(words[:4])}")
-    for cs in curved_segments:
-        cs.key = f"p{info.number:03d}_s{len(segments) + 1:03d}"
-        segments.append(cs)
-
-    for vs in vertical_segments:
-        vs.key = f"p{info.number:03d}_s{len(segments) + 1:03d}"
-        segments.append(vs)
+    # los párrafos llevan su índice original (con huecos si se descartó alguno); los añadidos siguen
+    # desde el mayor ya usado para no repetir ids (len(segments)+1 podía coincidir con uno existente)
+    next_idx = max((key_index(sg.key) for sg in segments), default=0)
+    for extra in [*curved_segments, *vertical_segments]:
+        next_idx += 1
+        extra.key = f"p{info.number:03d}_s{next_idx:03d}"
+        segments.append(extra)
 
     # alineación de líneas sueltas según sus vecinas (créditos centrados, columnas, textos a la derecha)
     def _near(a, b, tol=2.0):
@@ -618,6 +716,9 @@ def analyze(doc: pymupdf.Document) -> list[PageInfo]:
         info = classify_page(page, i + 1)
         if info.kind in ("digital", "mixed"):
             info.segments = extract_segments(page, info)
+            ensure_unique_keys(info)
+            if info.image_count or info.drawing_count:
+                mark_figures(info.segments, _layout_pictures(page))
         elif info.kind == "scanned":
             info.flag("La página tiene texto sin codificación legible y necesita OCR")
         pages.append(info)

@@ -54,6 +54,7 @@ class Segment:
     small_chars: dict[str, tuple[float, float]] | None = None  # texto curvo: separadores (tamaño, desplazamiento)
     edited: bool = False  # traducción corregida a mano desde el admin: no se acorta ni se reescribe con el modelo
     natural_width: bool = False  # modo digitalizar: la fuente nueva usa su ancho natural (sin condensar al original)
+    role: str | None = None  # "field": campo de ficha ("Etiqueta <b>valor</b>"); "figure": texto dentro de una ilustración
 
 
 @dataclass
@@ -74,3 +75,26 @@ class PageInfo:
         self.needs_review = True
         if reason not in self.review_reasons:
             self.review_reasons.append(reason)
+
+
+def key_index(key: str) -> int:
+    """Número final de un id de bloque ("p129_s008" -> 8); 0 si no tiene esa forma."""
+    tail = key.rsplit("_s", 1)[-1]
+    return int(tail) if tail.isdigit() else 0
+
+
+def ensure_unique_keys(info: "PageInfo") -> list[str]:
+    """Las traducciones se guardan por id: si dos bloques de la página comparten id, uno pisa al otro.
+    Renumera los repetidos con ids libres y marca la página para revisión. Devuelve los ids que se repetían."""
+    seen: set[str] = set()
+    dups: list[str] = []
+    next_idx = max((key_index(sg.key) for sg in info.segments), default=0)
+    for sg in info.segments:
+        if sg.key in seen:
+            dups.append(sg.key)
+            next_idx += 1
+            sg.key = f"p{info.number:03d}_s{next_idx:03d}"
+        seen.add(sg.key)
+    if dups:
+        info.flag(f"Bloques con id repetido renumerados: {', '.join(sorted(set(dups)))}")
+    return dups

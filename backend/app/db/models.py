@@ -85,6 +85,9 @@ class Segment(Base):
     seg_key: Mapped[str] = mapped_column(String(32))  # p041_s03
     bbox: Mapped[list] = mapped_column(JSON)
     block_type: Mapped[str] = mapped_column(String(16), default="text")
+    # "field": campo de ficha (etiqueta + valor); "figure": texto dentro de una ilustración (infografía).
+    # Las páginas con alguno se traducen con el texto de toda la página como contexto.
+    role: Mapped[str | None] = mapped_column(String(16))
     style: Mapped[dict] = mapped_column(JSON, default=dict)
     source_text: Mapped[str] = mapped_column(Text)
     source_html: Mapped[str] = mapped_column(Text)
