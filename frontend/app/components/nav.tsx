@@ -5,7 +5,7 @@ import { useEffect, useState, type ComponentType, type SVGProps } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { getSettings, methodLabel, SETTINGS_EVENT } from "@/lib/api";
-import { IconChevron, IconCloud, IconFlask, IconHistory, IconLayers, IconSettings, IconText, IconUpload } from "./art";
+import { IconBook, IconChevron, IconCloud, IconFlask, IconHistory, IconLayers, IconSettings, IconText, IconUpload } from "./art";
 
 type Item = { href: string; label: string; short: string; Icon: ComponentType<SVGProps<SVGSVGElement>>; match: (p: string) => boolean };
 
@@ -63,6 +63,10 @@ export function SideNav() {
 
   return (
     <nav className="sidenav" aria-label="Secciones">
+      <Link href="/" className="brand sidenav-brand" aria-label="AstroBooks, inicio">
+        <IconBook width={22} height={22} />
+        <span>AstroBooks</span>
+      </Link>
       <div className="sidenav-body">
         {SECTIONS.map((sec) => {
           const expanded = open[sec.id] !== false;

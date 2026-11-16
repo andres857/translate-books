@@ -1,9 +1,9 @@
 "use client";
 
-/* Primer paso del Playground: elegir el libro y la parte que se va a evaluar (capítulo, intervalo de páginas, una
-   página, una lista o el libro completo) sobre una cuadrícula de miniaturas. Hasta que el alcance es válido no se
-   entra en la mesa. Funciona también con libros escaneados sin capítulos: se define un intervalo «10–20». */
-import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+/* Vista inicial del Playground (una página, no un modal): elegir el libro y la parte que se va a evaluar (capítulo, intervalo
+   de páginas, una página, una lista o el libro completo) sobre una cuadrícula de miniaturas. Hasta que el alcance es
+   válido no se entra en la mesa; desde la mesa, «Cambiar» vuelve aquí. Funciona también con libros escaneados sin capítulos: se define un intervalo «10–20». */
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import {
   jobPageImageUrl, listPlaygroundPages, type Chapter, type Estimate, type PlaygroundBook, type PlaygroundPageInfo,
   type PlaygroundScope,
@@ -27,7 +27,6 @@ export interface ScopeValue {
 }
 
 interface Props {
-  open: boolean;
   books: PlaygroundBook[];
   bookId: number | null;
   onBook: (id: number) => void;
@@ -36,11 +35,10 @@ interface Props {
   onChange: (v: Partial<ScopeValue>) => void;
   estimate: Estimate | null;
   estimateError: string | null;
-  onClose: () => void;
-  upload: ReactNode; // formulario de subida, progreso de preparación y avisos
-  headAction: ReactNode; // botón «Subir un libro nuevo» en la cabecera
-  uploadView?: ReactNode; // vista de subida: si existe, sustituye a todo el contenido del modal
-  onCancelUpload?: () => void; // Esc en la vista de subida: vuelve a la de alcance
+  onContinue: () => void; // entra en la mesa con el alcance elegido
+  onBack?: () => void; // ya hay una mesa abierta: volver a ella sin cambiar nada
+  upload: ReactNode; // progreso de preparación y avisos, en la columna de libros
+  uploadAction: ReactNode; // botón «Subir un libro nuevo», arriba a la derecha junto al título
 }
 
 function modeOf(v: ScopeValue): Mode {
@@ -50,8 +48,7 @@ function modeOf(v: ScopeValue): Mode {
   return v.pagesSpec.trim() === "" || RANGE_RE.test(v.pagesSpec) ? "range" : "list";
 }
 
-export function ScopeDialog(p: Props) {
-  const ref = useRef<HTMLDialogElement>(null);
+export function ScopeView(p: Props) {
   const grid = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<Mode>(() => modeOf(p.value));
   const [pages, setPages] = useState<PlaygroundPageInfo[]>([]);
@@ -61,23 +58,6 @@ export function ScopeDialog(p: Props) {
   const q = bookQuery.trim().toLocaleLowerCase("es");
   const visibleBooks = q ? p.books.filter((b) => `${b.name} ${b.original_name}`.toLocaleLowerCase("es").includes(q)) : p.books;
   const count = book?.page_count ?? pages.length;
-
-  // <dialog> nativo: foco atrapado, Esc y fondo; se abre y cierra según la prop
-  useEffect(() => {
-    const d = ref.current;
-    if (!d) return;
-    if (p.open && !d.open) {
-      d.showModal();
-      d.focus(); // el foco inicial va al modal, no al primer botón (evita el anillo en «Subir un libro nuevo»)
-    }
-    if (!p.open && d.open) d.close();
-  }, [p.open]);
-
-  useEffect(() => {
-    if (p.open) setMode(modeOf(p.value));
-    // solo al abrir: después manda la pestaña elegida
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p.open]);
 
   // el alcance cambia desde fuera (capítulos detectados al elegir libro): la pestaña lo sigue
   useEffect(() => {
@@ -175,22 +155,25 @@ export function ScopeDialog(p: Props) {
       </>
     ) : p.bookId ? "Elige qué parte del libro evaluar" : "Elige o sube un libro";
 
+  const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") p.onBack?.(); };
+
   return (
-    <dialog ref={ref} className={p.uploadView ? "pg-dialog pg-dialog-upload" : "pg-dialog"} aria-labelledby="pg-dialog-title" tabIndex={-1}
-      onCancel={(e) => { e.preventDefault(); if (p.uploadView) p.onCancelUpload?.(); else p.onClose(); }}>
-      {p.uploadView ?? (<>
-      <div className="pg-dialog-head">
-        <div className="stack">
-          <strong id="pg-dialog-title">¿Con qué parte del libro trabajamos?</strong>
-          <span className="muted">Elige el libro y define el alcance: un capítulo, un intervalo de páginas, una página suelta o una lista.</span>
+    <>
+      <div className="page-head">
+        <div>
+          <h1>Playground</h1>
+          <p>¿Con qué parte del libro trabajamos? Elige el libro y define el alcance: un capítulo, un intervalo de páginas, una página suelta o una lista.</p>
         </div>
-        {p.headAction}
+        <div className="row">
+          {p.onBack && <button type="button" className="btn secondary" onClick={p.onBack}>Volver a la mesa</button>}
+          {p.uploadAction}
+        </div>
       </div>
 
-      <div className="pg-dialog-body">
-        <aside className="pg-dialog-side">
-          <div className="pg-side-head">
-            <span className="pg-eyebrow">Libros</span>
+      <div className="pg-start" onKeyDown={onKey}>
+        <aside className="pg-start-side" aria-label="Libros">
+          <div className="hist-side-head">
+            <strong>Libros</strong>
             <span className="muted">{p.books.length}</span>
           </div>
           {p.books.length > 6 && (
@@ -210,42 +193,51 @@ export function ScopeDialog(p: Props) {
             ))}
           </ul>
           {p.upload}
-
-          <div className="pg-side-foot">
-            {lostOcr > 0 && (
-              <div className="alert" role="note">
-                <IconWarn />
-                <span>
-                  {fmtN.format(lostOcr)} {lostOcr === 1 ? "página escaneada no tiene" : "páginas escaneadas no tienen"} texto
-                  extraído (en gris): comprueba que el OCR (Tesseract) está instalado y vuelve a preparar el libro.
-                </span>
-              </div>
-            )}
-            {book && (
-              <section className="pg-book-summary" aria-label="Resumen del libro" aria-live="polite">
-                <strong className="pg-ellipsis" title={book.name}>{book.name}</strong>
-                <dl>
-                  <dt>Páginas</dt><dd>{fmtN.format(book.page_count)}</dd>
-                  <dt>Bloques</dt><dd>{fmtN.format(book.blocks)}</dd>
-                  <dt>Capítulos</dt>
-                  <dd>{p.chapters.length ? `${p.chapters.length} · ${p.chapters[0]?.source === "detected" ? "detectados" : "índice"}` : "ninguno"}</dd>
-                  <dt>Escaneadas</dt><dd>{pages.length ? (scanned === pages.length && scanned > 0 ? "todo el libro" : fmtN.format(scanned)) : "…"}</dd>
-                  <dt>Sin texto</dt><dd>{pages.length ? fmtN.format(empty) : "…"}</dd>
-                  <dt>Producción</dt><dd>{book.production ? "sí, para comparar" : "no"}</dd>
-                </dl>
-              </section>
-            )}
-          </div>
+          {lostOcr > 0 && (
+            <div className="alert" role="note">
+              <IconWarn />
+              <span>
+                {fmtN.format(lostOcr)} {lostOcr === 1 ? "página escaneada no tiene" : "páginas escaneadas no tienen"} texto
+                extraído (en gris): comprueba que el OCR (Tesseract) está instalado y vuelve a preparar el libro.
+              </span>
+            </div>
+          )}
+          {book && (
+            <section className="pg-book-summary" aria-label="Resumen del libro" aria-live="polite">
+              <strong className="pg-ellipsis" title={book.name}>{book.name}</strong>
+              <dl>
+                <dt>Páginas</dt><dd>{fmtN.format(book.page_count)}</dd>
+                <dt>Bloques</dt><dd>{fmtN.format(book.blocks)}</dd>
+                <dt>Capítulos</dt>
+                <dd>{p.chapters.length ? `${p.chapters.length} · ${p.chapters[0]?.source === "detected" ? "detectados" : "índice"}` : "ninguno"}</dd>
+                <dt>Escaneadas</dt><dd>{pages.length ? (scanned === pages.length && scanned > 0 ? "todo el libro" : fmtN.format(scanned)) : "…"}</dd>
+                <dt>Sin texto</dt><dd>{pages.length ? fmtN.format(empty) : "…"}</dd>
+                <dt>Producción</dt><dd>{book.production ? "sí, para comparar" : "no"}</dd>
+              </dl>
+            </section>
+          )}
         </aside>
 
-        <section className="pg-dialog-main" aria-label="Alcance">
+        <section className="card pg-start-main" aria-labelledby="pg-scope-title">
+          {/* cabecera fija al desplazar: el resumen y «Continuar» siguen a la vista con cientos de miniaturas */}
+          <div className="pg-scope-head">
+            <div className="stack">
+              <h2 id="pg-scope-title">Alcance</h2>
+              <span className="muted pg-estimate" aria-live="polite">
+                {summary}
+                {emptySelected > 0 && p.estimate && p.estimate.blocks > 0 ? ` · ${emptySelected} sin texto` : ""}
+              </span>
+            </div>
+            <button type="button" className="btn" disabled={!valid} onClick={p.onContinue}>Continuar al playground</button>
+          </div>
+
           <div className="tabs pg-modes" role="radiogroup" aria-label="Cómo elegir las páginas">
             {MODES.map((m) => (
               <button key={m.id} type="button" role="radio" aria-checked={mode === m.id} onClick={() => pickMode(m.id)}>{m.title}</button>
             ))}
           </div>
 
-          <div className="pg-dialog-mode">
+          <div className="pg-scope-mode">
             {mode === "chapter" && (p.chapters.length ? (
               <ul className="pg-chapters" role="listbox" aria-label="Capítulos">
                 {p.chapters.map((c, i) => (
@@ -317,17 +309,6 @@ export function ScopeDialog(p: Props) {
           </div>
         </section>
       </div>
-
-      <div className="pg-dialog-foot">
-        <span className="muted pg-estimate" aria-live="polite">
-          {summary}
-          {emptySelected > 0 && p.estimate && p.estimate.blocks > 0 ? ` · ${emptySelected} sin texto` : ""}
-        </span>
-        <span className="pg-spacer" />
-        <button type="button" className="btn secondary" onClick={p.onClose}>Cerrar</button>
-        <button type="button" className="btn" disabled={!valid} onClick={p.onClose}>Continuar al playground</button>
-      </div>
-      </>)}
-    </dialog>
+    </>
   );
 }

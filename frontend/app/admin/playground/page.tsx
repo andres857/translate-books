@@ -14,7 +14,7 @@ import type { UploadProgress } from "@/lib/api";
 import { UploadProgressBar } from "@/app/components/upload-progress";
 import { IconCheck, IconHourglass, IconUpload, IconWarn, IconX } from "../../components/art";
 import { Panel, type PanelColumn } from "./panel";
-import { ScopeDialog, type ScopeValue } from "./scope-dialog";
+import { ScopeView, type ScopeValue } from "./scope-view";
 import {
   DEFAULTS, duration, fmtN, LABELS, MAX_VARIANTS, pageFromSegments, parsePages, sameConfig, toInput, variantName,
   type ColId, type LocalVariant,
@@ -65,8 +65,9 @@ export default function PlaygroundPage() {
   const [prep, setPrep] = useState<JobStatus | null>(null);
   // resumen de la última preparación, mostrado en la vista de subida
   const [prepDone, setPrepDone] = useState<{ name: string; pages: number; blocks: number; chapters: number; detected: boolean } | null>(null);
-  // primer paso: elegir libro y alcance en el modal; luego se entra en la mesa
+  // vista inicial: elegir libro y alcance; luego se entra en la mesa («Cambiar» vuelve a esta vista)
   const [scopeOpen, setScopeOpen] = useState(true);
+  const [entered, setEntered] = useState(false); // ya hay una mesa a la que volver
 
   const book = books.find((b) => b.id === bookId) ?? null;
   const task: PlaygroundTask = run?.task ?? book?.task ?? "translate";
@@ -94,6 +95,7 @@ export default function PlaygroundPage() {
   const show = useCallback((r: PlaygroundRun) => {
     setRun(r);
     setScopeOpen(false);
+    setEntered(true);
     setBookId(r.job_id);
     const s = r.scope ?? "pages";
     setScope(s === "chapter" ? "pages" : s); // el capítulo se elige de nuevo de la lista
@@ -146,7 +148,7 @@ export default function PlaygroundPage() {
     setChapters([]);
     setChapter("");
     const count = books.find((b) => b.id === bookId)?.page_count ?? 1;
-    const choosing = scopeOpen && !run; // eligiendo en el modal: alcance por defecto según haya capítulos
+    const choosing = scopeOpen && !run; // eligiendo en la vista inicial: alcance por defecto según haya capítulos
     listChapters(bookId)
       .catch(() => [] as Chapter[])
       .then((chs) => {
@@ -478,19 +480,20 @@ export default function PlaygroundPage() {
   const closeUpload = () => { setUploadOpen(false); setFile(null); setRights(false); setDrag(false); setPrepDone(null); };
   const prepFailed = prep?.status === "failed" || prep?.status === "cancelled";
   const prepStage = prep?.stages.find((st) => st.state === "in_progress")?.label ?? (prep?.status === "queued" ? "En cola" : "…");
-  // vista de subida: ocupa todo el modal (cabecera, cuerpo y pie propios); «Cancelar» vuelve al alcance
+  // vista de subida: página propia (cabecera y tarjeta con el formulario); «Cancelar» vuelve a la vista de alcance
   const uploadView = uploadOpen ? (
     <>
-      <div className="pg-dialog-head">
-        <div className="stack">
-          <strong id="pg-dialog-title">{prepDone ? "Libro listo para evaluar" : prep ? "Preparando el libro" : "Subir un libro para evaluar"}</strong>
-          <span className="muted">
+      <div className="page-head">
+        <div>
+          <h1>{prepDone ? "Libro listo para evaluar" : prep ? "Preparando el libro" : "Subir un libro para evaluar"}</h1>
+          <p>
             Solo se prepara: se analiza el PDF, se separa por capítulos y se protegen números, glifos y términos.
             No se traduce nada ni se gasta saldo hasta que pulses «Ejecutar».
-          </span>
+          </p>
         </div>
+        <button type="button" className="btn secondary" disabled={uploading !== false} onClick={closeUpload}>Volver al alcance</button>
       </div>
-      <div className="pg-upload-view">
+      <section className="card pg-upload-card" aria-label="Libro nuevo">
         {prepDone ? (
           <section className="pg-upload-box pg-upload-result" aria-live="polite" aria-labelledby="pg-prep-done">
             <span className="pg-upload-icon ok"><IconCheck /></span>
@@ -579,8 +582,7 @@ export default function PlaygroundPage() {
           )}
         </div>
         )}
-      </div>
-      <div className="pg-dialog-foot">
+      <div className="pg-upload-actions">
         {prepDone ? (
           <>
             <span className="muted">Sin traducir · no se ha gastado saldo</span>
@@ -597,13 +599,11 @@ export default function PlaygroundPage() {
                 <button type="button" className="btn secondary" onClick={() => { setPrep(null); closeUpload(); }}>Cancelar</button>
                 <button type="button" className="btn" onClick={() => setPrep(null)}>Probar de nuevo</button>
               </>
-            ) : (
-              <button type="button" className="btn secondary" onClick={closeUpload}>Volver al alcance</button>
-            )}
+            ) : null}
           </>
         ) : (
           <>
-            <span className="muted">{uploading !== false ? "No cierres esta ventana hasta que termine la subida"
+            <span className="muted">{uploading !== false ? "No cierres esta página hasta que termine la subida"
               : file ? (rights ? "Listo para preparar" : "Confirma que tienes derechos de uso") : "Elige un PDF"}</span>
             <span className="pg-spacer" />
             <button type="button" className="btn secondary" disabled={uploading !== false} onClick={closeUpload}>Cancelar</button>
@@ -613,9 +613,10 @@ export default function PlaygroundPage() {
           </>
         )}
       </div>
+      </section>
     </>
   ) : null;
-  // progreso de la preparación y avisos (barra lateral del modal o encima de la mesa)
+  // progreso de la preparación y avisos (columna de libros de la vista inicial o encima de la mesa)
   const uploadArea = (
     <>
         {prep && (
@@ -641,26 +642,33 @@ export default function PlaygroundPage() {
   );
 
   // ------------------------------------------------------------------ vista
-  return (
-    <main className="pg">
-      <ScopeDialog open={scopeOpen} books={books} bookId={bookId} onBook={changeBook} chapters={chapters}
+  if (scopeOpen && uploadView) return (
+    <main onKeyDown={(e) => { if (e.key === "Escape" && uploading === false) closeUpload(); }}>{uploadView}</main>
+  );
+  if (scopeOpen) return (
+    <main className="wide">
+      <ScopeView books={books} bookId={bookId} onBook={changeBook} chapters={chapters}
         value={scopeValue} onChange={setScopeValue} estimate={estimate} estimateError={estimateError}
-        onClose={() => { setScopeOpen(false); closeUpload(); }}
+        onContinue={() => { setScopeOpen(false); setEntered(true); }}
+        onBack={entered ? () => setScopeOpen(false) : undefined}
         upload={uploadArea}
-        uploadView={uploadView}
-        onCancelUpload={closeUpload}
-        headAction={(
-          <button type="button" className="btn secondary" onClick={() => { setNotice(null); setUploadOpen(true); }}>
+        uploadAction={(
+          <button type="button" className="btn" onClick={() => { setNotice(null); setUploadOpen(true); }}>
             <IconUpload /> {prep ? "Ver la preparación" : "Subir un libro nuevo"}
           </button>
         )} />
+    </main>
+  );
+
+  return (
+    <main className="pg">
       <header className="pg-controls" aria-label="Controles de evaluación">
         <div className="pg-bar">
           <div className="pg-title">
             <strong>Playground</strong>
             <span>{run ? `Evaluación n.º ${run.id} · ${STATUS_TEXT[run.status]}` : "Nueva evaluación"}</span>
           </div>
-          <button type="button" className="pg-scope-btn" aria-haspopup="dialog" title="Cambiar el libro o la parte que se evalúa"
+          <button type="button" className="pg-scope-btn" title="Cambiar el libro o la parte que se evalúa"
             onClick={() => setScopeOpen(true)}>
             <span className="pg-ellipsis"><strong>{book?.name ?? "Sin libro"}</strong> · {scopeLabel}</span>
             <span className="pg-scope-change">Cambiar</span>

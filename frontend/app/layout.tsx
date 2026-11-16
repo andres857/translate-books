@@ -1,7 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { Inter } from "next/font/google";
-import { IconBook } from "./components/art";
 import { SideNav } from "./components/nav";
 import "./tokens.css";
 import "./globals.css";
@@ -19,13 +17,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="es">
       <body className={font.className}>
         <div className="app">
-          <header className="topbar">
-            <Link href="/" className="brand" aria-label="AstroBooks, inicio">
-              <IconBook width={22} height={22} />
-              <span>AstroBooks</span>
-            </Link>
-            <span className="topbar-note">Traductor de libros PDF</span>
-          </header>
           <SideNav />
           <div className="content">{children}</div>
         </div>
