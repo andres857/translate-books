@@ -3,7 +3,21 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    MetaData,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy import false as sa_false
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -12,8 +26,20 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+# Nombres estables para los constraints e índices nuevos. Coincide con los que ya existen en la BD (índices `ix_…`,
+# FK `fk_<tabla>_<columna>_<tabla referida>` de la migración f3b5d7e9a1c4): no renombra nada. Los UNIQUE y la PK
+# que hoy no tienen nombre en SQLite no se comparan por nombre en `alembic check`.
+NAMING_CONVENTION = {
+    "ix": "ix_%(column_0_label)s",
+    "uq": "uq_%(table_name)s_%(column_0_name)s",
+    "ck": "ck_%(table_name)s_%(constraint_name)s",
+    "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+    "pk": "pk_%(table_name)s",
+}
+
+
 class Base(DeclarativeBase):
-    pass
+    metadata = MetaData(naming_convention=NAMING_CONVENTION)
 
 
 class Document(Base):
@@ -227,6 +253,8 @@ class StoredFile(Base):
 class User(Base):
     """Cuenta de acceso. La contraseña solo se guarda como hash Argon2id."""
     __tablename__ = "users"
+    # mismo CHECK que crea la migración d2e4f6a8c0b1; con la convención "ck" el nombre queda en `ck_users_role`
+    __table_args__ = (CheckConstraint("role IN ('admin', 'user')", name="role"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(String(254), unique=True)  # siempre en minúsculas

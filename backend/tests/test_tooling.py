@@ -23,6 +23,34 @@ def test_alembic_check(tmp_path):
     assert "No new upgrade operations detected" in check.stdout + check.stderr
 
 
+def test_user_model_declares_role_check():
+    """El CHECK `ck_users_role` de la migración también está en el modelo (#17)."""
+    from sqlalchemy import CheckConstraint
+
+    from app.db.models import Base
+
+    checks = {c.name: c for c in Base.metadata.tables["users"].constraints if isinstance(c, CheckConstraint)}
+    assert "ck_users_role" in checks
+    assert "role IN ('admin', 'user')" in str(checks["ck_users_role"].sqltext)
+
+
+def test_create_all_rejects_unknown_role():
+    """Una BD creada con `create_all` (sin Alembic) rechaza `role='root'` con `IntegrityError` (#17)."""
+    from sqlalchemy import create_engine, insert
+    from sqlalchemy.exc import IntegrityError
+
+    from app.db.models import Base, User
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    row = {"email": "x@example.com", "name": "X", "password_hash": "h"}
+    with engine.begin() as conn:
+        conn.execute(insert(User).values(**row, role="user"))
+    with pytest.raises(IntegrityError, match="ck_users_role"), engine.begin() as conn:
+        conn.execute(insert(User).values(**row | {"email": "y@example.com"}, role="root"))
+    engine.dispose()
+
+
 @pytest.fixture(scope="module")
 def client(tmp_path_factory):
     os.environ["FAKE_TRANSLATOR"] = "true"
