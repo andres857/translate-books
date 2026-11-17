@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.api.schemas import UserRead, UsersPage, UserWithPassword
 from app.auth import events, sessions
 from app.auth import users as svc
 from app.auth.deps import Principal, require_admin, require_recent_reauth
@@ -39,7 +40,7 @@ def _user_or_404(db: Session, user_id: int) -> User:
     return user
 
 
-@router.get("")
+@router.get("", response_model=UsersPage)
 def list_users(page: int = 1, page_size: int = 50, p: Principal = Depends(require_admin),
                db: Session = Depends(get_db)):
     page, page_size = max(1, page), max(1, min(page_size, 200))
@@ -48,7 +49,7 @@ def list_users(page: int = 1, page_size: int = 50, p: Principal = Depends(requir
     return {"items": [svc.public(u) for u in rows], "total": total, "page": page, "page_size": page_size}
 
 
-@router.post("")
+@router.post("", response_model=UserWithPassword)
 def create_user(body: UserCreate, request: Request, p: Principal = Depends(require_recent_reauth),
                 db: Session = Depends(get_db)):
     user, temp = svc.create(db, body.email, body.name, body.role, actor_id=p.user.id, ip=sessions.client_ip(request))
@@ -56,7 +57,7 @@ def create_user(body: UserCreate, request: Request, p: Principal = Depends(requi
     return {"user": svc.public(user), "temporary_password": temp}
 
 
-@router.patch("/{user_id}")
+@router.patch("/{user_id}", response_model=UserRead)
 def update_user(user_id: int, body: UserPatch, request: Request, p: Principal = Depends(require_recent_reauth),
                 db: Session = Depends(get_db)):
     user = _user_or_404(db, user_id)
@@ -79,7 +80,7 @@ def update_user(user_id: int, body: UserPatch, request: Request, p: Principal = 
     return svc.public(user)
 
 
-@router.post("/{user_id}/reset-password")
+@router.post("/{user_id}/reset-password", response_model=UserWithPassword)
 def reset_password(user_id: int, request: Request, p: Principal = Depends(require_recent_reauth),
                    db: Session = Depends(get_db)):
     user = _user_or_404(db, user_id)

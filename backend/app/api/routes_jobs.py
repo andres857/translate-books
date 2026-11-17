@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload, object_session
 
+from app.api.schemas import JobRead, OkOut, PageRead, PresignBookOut
 from app.api.storage_errors import storage_call
 from app.auth import sessions as auth_sessions
 from app.auth.deps import Principal, require_admin, require_user
@@ -160,7 +161,7 @@ def _create_job_from_bytes(db: Session, data: bytes, filename: str, rights_confi
     return job_status(job)
 
 
-@router.post("")
+@router.post("", response_model=JobRead)
 def create_job(
     file: UploadFile = File(...),
     rights_confirmed: bool = Form(...),
@@ -213,7 +214,7 @@ def _incoming(p: Principal) -> str:
     return f"{INCOMING}/u{p.user.id}"
 
 
-@router.post("/presign")
+@router.post("/presign", response_model=PresignBookOut)
 def presign_book(body: PresignBookIn, storage: StoragePort = Depends(get_storage),
                  p: Principal = Depends(require_user)):
     if not body.filename.lower().endswith(".pdf"):
@@ -224,7 +225,7 @@ def presign_book(body: PresignBookIn, storage: StoragePort = Depends(get_storage
             "headers": {"Content-Type": "application/pdf"}}
 
 
-@router.post("/from-upload")
+@router.post("/from-upload", response_model=JobRead)
 def create_job_from_upload(body: FromUploadIn, storage: StoragePort = Depends(get_storage),
                            db: Session = Depends(get_db), p: Principal = Depends(require_user)):
     if not body.key.startswith(f"{_incoming(p)}/") or ".." in body.key:
@@ -245,7 +246,7 @@ def create_job_from_upload(body: FromUploadIn, storage: StoragePort = Depends(ge
             pass
 
 
-@router.get("")
+@router.get("", response_model=list[JobRead])
 def list_jobs(db: Session = Depends(get_db), p: Principal = Depends(require_user)):
     q = db.query(Job).options(joinedload(Job.document))
     if not p.is_admin:
@@ -255,7 +256,7 @@ def list_jobs(db: Session = Depends(get_db), p: Principal = Depends(require_user
     return [job_status(j, review[j.id]) for j in jobs]
 
 
-@router.get("/{job_id}")
+@router.get("/{job_id}", response_model=JobRead)
 def get_job(job_id: int, db: Session = Depends(get_db), p: Principal = Depends(require_user)):
     return job_status(_job_or_404(db, job_id, p))
 
@@ -291,7 +292,7 @@ async def job_events(job_id: int, p: Principal = Depends(require_user)):
     return StreamingResponse(gen(), media_type="text/event-stream")
 
 
-@router.post("/{job_id}/cancel")
+@router.post("/{job_id}/cancel", response_model=JobRead)
 def cancel_job(job_id: int, db: Session = Depends(get_db), p: Principal = Depends(require_user)):
     job = _job_or_404(db, job_id, p)
     if job.status in ("queued", "running"):
@@ -300,7 +301,7 @@ def cancel_job(job_id: int, db: Session = Depends(get_db), p: Principal = Depend
     return job_status(job)
 
 
-@router.delete("/{job_id}")
+@router.delete("/{job_id}", response_model=OkOut)
 def delete_job(job_id: int, db: Session = Depends(get_db), p: Principal = Depends(require_admin)):
     """Elimina un libro con todo lo suyo: páginas y bloques, evaluaciones del Playground, archivos generados y,
     si el documento no tiene otro trabajo, el documento con su glosario, términos y PDF subido."""
@@ -323,7 +324,7 @@ def delete_job(job_id: int, db: Session = Depends(get_db), p: Principal = Depend
     return {"ok": True}
 
 
-@router.post("/{job_id}/resume")
+@router.post("/{job_id}/resume", response_model=JobRead)
 def resume_job(job_id: int, db: Session = Depends(get_db), p: Principal = Depends(require_user)):
     job = _job_or_404(db, job_id, p)
     if job.status in ("cancelled", "failed", "paused"):
@@ -402,7 +403,7 @@ def preview(job_id: int, number: int, version: Literal["original", "translated"]
     return Response(png, media_type="image/png")
 
 
-@router.get("/{job_id}/pages")
+@router.get("/{job_id}/pages", response_model=list[PageRead])
 def pages(job_id: int, db: Session = Depends(get_db), p: Principal = Depends(require_user)):
     _job_or_404(db, job_id, p)
     rows = db.query(Page).filter(Page.job_id == job_id).order_by(Page.number)

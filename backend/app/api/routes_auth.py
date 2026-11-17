@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.schemas import OkOut, SessionView
 from app.auth import events, passwords, rate_limit, sessions
 from app.auth.deps import Principal, check_origin, current_principal, require_admin, verify_write
 from app.auth.errors import ApiError
@@ -56,7 +57,7 @@ def session_view(p_user: User, s, token: str) -> dict:
     }
 
 
-@router.post("/login")
+@router.post("/login", response_model=SessionView)
 def login(body: LoginIn, request: Request, response: Response, db: Session = Depends(get_db)):
     check_origin(request)
     email = normalize_email(body.email)
@@ -88,12 +89,12 @@ def login(body: LoginIn, request: Request, response: Response, db: Session = Dep
     return session_view(user, s, token)
 
 
-@router.get("/me")
+@router.get("/me", response_model=SessionView)
 def me(p: Principal = Depends(current_principal)):
     return session_view(p.user, p.session, p.token)
 
 
-@router.post("/logout")
+@router.post("/logout", response_model=OkOut)
 def logout(request: Request, response: Response, p: Principal = Depends(verify_write),
            db: Session = Depends(get_db)):
     s = db.merge(p.session)
@@ -104,7 +105,7 @@ def logout(request: Request, response: Response, p: Principal = Depends(verify_w
     return {"ok": True}
 
 
-@router.post("/reauthenticate")
+@router.post("/reauthenticate", response_model=SessionView)
 def reauthenticate(body: PasswordIn, request: Request, p: Principal = Depends(require_admin),
                    _w: Principal = Depends(verify_write), db: Session = Depends(get_db)):
     ip = sessions.client_ip(request)
@@ -124,7 +125,7 @@ def reauthenticate(body: PasswordIn, request: Request, p: Principal = Depends(re
     return session_view(user, s, p.token)
 
 
-@router.post("/change-password")
+@router.post("/change-password", response_model=SessionView)
 def change_password(body: ChangePasswordIn, request: Request, response: Response,
                     p: Principal = Depends(verify_write), db: Session = Depends(get_db)):
     """Funciona con sesión normal o restringida. Revoca todas las sesiones y abre una normal nueva."""

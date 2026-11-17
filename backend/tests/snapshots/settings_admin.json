@@ -1,0 +1,1 @@
+{"provider":"deepseek","deepseek_model":"deepseek-v4-pro","deepseek_thinking":"low","deepseek_concurrency":4,"deepseek_key_set":true,"deepseek_key_hint":"abcd","deepseek_models":["deepseek-flash","deepseek-v4-pro"]}
