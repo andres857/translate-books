@@ -119,6 +119,9 @@ def edit_segment(job_id: int, seg_key: str, body: SegmentEdit, db: Session = Dep
     job = _job_or_404(db, job_id, None)  # router solo admin
     if (job.options or {}).get("mode") == "digitize":
         raise HTTPException(400, "Los libros digitalizados no tienen traducción que corregir.")
+    if job.status in ("queued", "running"):
+        # el worker reescribe las páginas desde lo que leyó al empezar: la corrección se perdería
+        raise HTTPException(409, "El libro se está procesando: espera a que termine para guardar correcciones.")
     seg = db.scalars(select(Segment).join(Page).where(Page.job_id == job_id, Segment.seg_key == seg_key)).first()
     if seg is None:
         raise HTTPException(404, "No encontramos ese bloque.")

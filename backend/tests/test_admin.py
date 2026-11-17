@@ -147,3 +147,70 @@ def test_azw3_without_calibre(client, job_id, monkeypatch):
     r = client.get(f"/api/jobs/{job_id}/download?format=azw3")
     assert r.status_code == 409 and "Calibre" in r.json()["detail"]
     assert client.get(f"/api/jobs/{job_id}/download").status_code == 200
+
+
+def _seg_row(job_id: int, key: str):
+    from sqlalchemy import select
+
+    from app.db.models import Page, Segment
+    from app.db.session import SessionLocal
+
+    with SessionLocal() as s:
+        seg = s.scalars(select(Segment).join(Page).where(Page.job_id == job_id, Segment.seg_key == key)).one()
+        return seg.translation, bool(seg.edited)
+
+
+def _set_status(job_id: int, status: str) -> None:
+    from app.db.models import Job
+    from app.db.session import SessionLocal
+
+    with SessionLocal() as s:
+        s.get(Job, job_id).status = status
+        s.commit()
+
+
+def test_edit_rejected_while_processing(client, job_id):
+    """#01: con el trabajo en cola o en marcha, la corrección se rechaza (409) y el bloque no cambia."""
+    page = client.get(f"/api/admin/jobs/{job_id}/pages/5/segments").json()
+    seg = next(s for s in page["segments"] if s["action"] == "translate")
+    before = _seg_row(job_id, seg["key"])
+    try:
+        for status in ("queued", "running"):
+            _set_status(job_id, status)
+            r = client.put(f"/api/admin/jobs/{job_id}/segments/{seg['key']}", json={"translation": "No debe quedar"})
+            assert r.status_code == 409, (status, r.text)
+            assert "procesando" in r.json()["detail"]
+            assert _seg_row(job_id, seg["key"]) == before
+    finally:
+        _set_status(job_id, "done")
+    # con el trabajo terminado, se guarda como siempre
+    r = client.put(f"/api/admin/jobs/{job_id}/segments/{seg['key']}", json={"translation": "Corregido WQPZ"})
+    assert r.status_code == 200, r.text
+    assert r.json()["edited"] is True
+    assert _seg_row(job_id, seg["key"]) == ("Corregido WQPZ", True)
+
+
+def test_edit_during_queued_recompose_keeps_first_correction(client, job_id):
+    """#01: editar → recomponer → editar otro bloque de la misma página en cola se rechaza;
+    tras el worker la primera corrección sigue."""
+    from app import worker
+
+    number = 3
+    page = client.get(f"/api/admin/jobs/{job_id}/pages/{number}/segments").json()
+    segs = [s for s in page["segments"] if s["action"] == "translate"]
+    assert len(segs) >= 2
+    first, second = segs[0], segs[1]
+    r = client.put(f"/api/admin/jobs/{job_id}/segments/{first['key']}", json={"translation": "Primera KVJX"})
+    assert r.status_code == 200, r.text
+    r = client.post(f"/api/admin/jobs/{job_id}/pages/{number}/recompose")
+    assert r.status_code == 200 and r.json()["status"] == "queued"
+    second_before = _seg_row(job_id, second["key"])
+    r = client.put(f"/api/admin/jobs/{job_id}/segments/{second['key']}", json={"translation": "Segunda perdida"})
+    assert r.status_code == 409, r.text
+    assert _seg_row(job_id, second["key"]) == second_before
+    assert worker.claim_job() == job_id
+    worker.process(job_id)
+    assert client.get(f"/api/jobs/{job_id}").json()["status"] == "done"
+    kept = {s["key"]: s for s in client.get(f"/api/admin/jobs/{job_id}/pages/{number}/segments").json()["segments"]}
+    assert kept[first["key"]]["edited"] is True and kept[first["key"]]["translation"] == "Primera KVJX"
+    assert kept[second["key"]]["edited"] is False
