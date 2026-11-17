@@ -2,7 +2,7 @@
 
 - **Severidad:** Bajo
 - **Categoría:** Rendimiento
-- **Estado:** abierto
+- **Estado:** resuelto · commit(s) `31a186b`
 - **Ubicación:** `backend/app/playground.py` (`delete_job`: bucles sobre `PlaygroundAttempt`, `GlossaryEntry` y `ProtectedTerm`)
 - **Aceptación:** [20-borrado-glosario-fila-a-fila.aceptacion.md](20-borrado-glosario-fila-a-fila.aceptacion.md)
 
