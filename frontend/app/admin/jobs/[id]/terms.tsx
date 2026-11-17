@@ -68,20 +68,24 @@ export function Terms({ documentId }: { documentId: number }) {
 
   async function saveEdit() {
     if (!editing || !editing.target.trim()) return;
-    await run(() => editGlossary(editing.id, { target: editing.target }));
-    setEditing(null);
+    // si el servidor lo rechaza, la fila sigue en edición con lo escrito
+    if (await run(() => editGlossary(editing.id, { target: editing.target }))) setEditing(null);
   }
 
   const autoCount = glossary.filter((x) => x.origin === "auto").length;
   const running = disc?.status === "running";
 
-  async function run(action: () => Promise<unknown>) {
+  /** Ejecuta un cambio y recarga las listas. Devuelve si el cambio se guardó: quien llama solo limpia el
+   *  formulario en ese caso (si falla, el usuario conserva lo que escribió). */
+  async function run(action: () => Promise<unknown>): Promise<boolean> {
     try {
       await action();
-      await load();
     } catch (e) {
       setError((e as Error).message);
+      return false;
     }
+    await load(); // load() muestra su propio error si no puede recargar
+    return true;
   }
 
   const scopeOf = (id: number | null) => (id === null ? "Todos los libros" : "Este libro");
@@ -128,7 +132,8 @@ export function Terms({ documentId }: { documentId: number }) {
         <form className="form-grid" onSubmit={(e) => {
           e.preventDefault();
           if (!g.source.trim() || !g.target.trim()) return;
-          run(() => addGlossary(g.source, g.target, docFor(g.scope))).then(() => setG({ ...g, source: "", target: "" }));
+          void run(() => addGlossary(g.source, g.target, docFor(g.scope)))
+            .then((ok) => { if (ok) setG((cur) => ({ ...cur, source: "", target: "" })); });
         }}>
           <label className="control">Término en inglés
             <input value={g.source} onChange={(e) => setG({ ...g, source: e.target.value })} />
@@ -195,7 +200,8 @@ export function Terms({ documentId }: { documentId: number }) {
         <form className="form-grid" onSubmit={(e) => {
           e.preventDefault();
           if (t.term.trim().length < 2) return;
-          run(() => addTerm(t.term, t.category, docFor(t.scope))).then(() => setT({ ...t, term: "" }));
+          void run(() => addTerm(t.term, t.category, docFor(t.scope)))
+            .then((ok) => { if (ok) setT((cur) => ({ ...cur, term: "" })); });
         }}>
           <label className="control">Término
             <input value={t.term} onChange={(e) => setT({ ...t, term: e.target.value })} />
