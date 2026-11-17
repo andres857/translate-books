@@ -65,7 +65,7 @@ y `translation_cache` no tienen relaciones. Diferencias modelo/esquema: el CHECK
 | 08 | Medio | [Un usuario sin rol admin ve la pista de la llave de DeepSeek](08-settings-expone-pista-llave.md) | [criterios](08-settings-expone-pista-llave.aceptacion.md) | resuelto |
 | 09 | Medio | [Las FK no definen qué pasa al borrar y el borrado de un libro carga todo en memoria](09-fks-sin-ondelete.md) | [criterios](09-fks-sin-ondelete.aceptacion.md) | resuelto |
 | 10 | Medio | [Nada en la BD impide duplicados en bloques, glosario y términos](10-sin-unique-duplicados.md) | [criterios](10-sin-unique-duplicados.aceptacion.md) | resuelto |
-| 11 | Medio | [Varios parámetros de entrada son texto libre](11-entradas-sin-validar.md) | [criterios](11-entradas-sin-validar.aceptacion.md) | abierto |
+| 11 | Medio | [Varios parámetros de entrada son texto libre](11-entradas-sin-validar.md) | [criterios](11-entradas-sin-validar.aceptacion.md) | resuelto |
 | 12 | Medio | [PDFs y sesiones de base de datos que no se cierran](12-recursos-sin-cerrar.md) | [criterios](12-recursos-sin-cerrar.aceptacion.md) | resuelto |
 | 13 | Medio | [Borrado duplicado, imports internos y consultas al estilo 1.x](13-logica-duplicada-y-legacy.md) | [criterios](13-logica-duplicada-y-legacy.aceptacion.md) | abierto |
 | 14 | Medio | [Ningún endpoint declara su esquema de respuesta](14-sin-response-model.md) | [criterios](14-sin-response-model.aceptacion.md) | abierto |
