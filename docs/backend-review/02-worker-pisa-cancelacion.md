@@ -2,7 +2,7 @@
 
 - **Severidad:** Alto
 - **Categoría:** Concurrencia
-- **Estado:** abierto
+- **Estado:** resuelto · commit(s) `f39a302`
 - **Ubicación:** `backend/app/worker.py:157`, `:172`, `:204`; `backend/app/playground.py:672`, `:692`, `:701`; API en `backend/app/api/routes_jobs.py:372-378` y `routes_playground.py:402-408`
 - **Aceptación:** [02-worker-pisa-cancelacion.aceptacion.md](02-worker-pisa-cancelacion.aceptacion.md)
 
