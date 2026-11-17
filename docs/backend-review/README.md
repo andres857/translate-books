@@ -69,10 +69,11 @@ y `translation_cache` no tienen relaciones. Diferencias modelo/esquema: el CHECK
 | 12 | Medio | [PDFs y sesiones de base de datos que no se cierran](12-recursos-sin-cerrar.md) | [criterios](12-recursos-sin-cerrar.aceptacion.md) | abierto |
 | 13 | Medio | [Borrado duplicado, imports internos y consultas al estilo 1.x](13-logica-duplicada-y-legacy.md) | [criterios](13-logica-duplicada-y-legacy.aceptacion.md) | abierto |
 | 14 | Medio | [Ningún endpoint declara su esquema de respuesta](14-sin-response-model.md) | [criterios](14-sin-response-model.aceptacion.md) | abierto |
-| 15 | Medio | [Sin linter, sin chequeo de tipos y sin control de divergencia del esquema](15-sin-lint-ni-checks.md) | [criterios](15-sin-lint-ni-checks.aceptacion.md) | abierto |
+| 15 | Medio | [Sin linter, sin chequeo de tipos y sin control de divergencia del esquema](15-sin-lint-ni-checks.md) | [criterios](15-sin-lint-ni-checks.aceptacion.md) | resuelto |
 | 16 | Bajo | [Sesiones, intentos de login, eventos y caché crecen sin límite](16-tablas-crecen-sin-limite.md) | [criterios](16-tablas-crecen-sin-limite.aceptacion.md) | abierto |
 | 17 | Bajo | [El CHECK del rol existe en la BD pero no en el modelo](17-check-rol-solo-en-migracion.md) | [criterios](17-check-rol-solo-en-migracion.aceptacion.md) | abierto |
 | 18 | Bajo | [Variables reutilizadas y un diccionario de locks que crece sin límite](18-estilo-menor.md) | [criterios](18-estilo-menor.aceptacion.md) | abierto |
+| 19 | Bajo | [Avisos de ruff previos silenciados por archivo](19-avisos-ruff-pendientes.md) | [criterios](19-avisos-ruff-pendientes.aceptacion.md) | abierto |
 
 ## Preguntas de negocio (se hacen antes de la ficha)
 

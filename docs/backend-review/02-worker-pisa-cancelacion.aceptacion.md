@@ -19,8 +19,8 @@ Ficha: [02-worker-pisa-cancelacion.md](02-worker-pisa-cancelacion.md). Marca cad
   - Verificado: 149 passed, 1 skipped, 5 deselected (antes 140 passed + 9 nuevos).
 - [x] Si la ficha añade una migración: `alembic upgrade head` → `alembic downgrade -1` → `alembic upgrade head` sin errores sobre una **copia** de `data/app.db`, y `PRAGMA foreign_key_check` vacío después. Si no migra, escribir «sin migración».
   - Verificado: sin migración.
-- [ ] Desde que exista el #15: `ruff check app tests` sin errores y el test de `alembic check` en verde.
-  - Pendiente de verificación manual: el #15 sigue abierto (ruff y `alembic check` no están instalados).
+- [x] Desde que exista el #15: `ruff check app tests` sin errores y el test de `alembic check` en verde.
+  - Verificado (al cerrar el #15, sobre el código actual): `ruff check app tests` → `All checks passed!` y `test_alembic_check` en verde.
 - [x] Desplegado con la skill `deploy`: `curl -s localhost:8000/api/health` devuelve `{"ok":true}` y `http://localhost:3100/login` responde 200.
   - Verificado: sin trabajos ni evaluaciones activos, reconstruidos `api` y `worker`; health `{"ok":true}`, `/login` 200 y el contenedor `worker` contiene `close_job` y `_set_if_running`.
 - [ ] Regresión: subir un PDF, ver el progreso, cancelar, reanudar y descargar (PDF/EPUB) como `user` siguen funcionando (`tests/test_api.py`, `tests/test_jobs_upload.py` en verde).

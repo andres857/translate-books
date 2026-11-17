@@ -17,8 +17,8 @@ Ficha: [08-settings-expone-pista-llave.md](08-settings-expone-pista-llave.md). M
   - Verificado: 154 passed, 1 skipped, 5 deselected (antes 152 passed + 2 nuevos). Frontend: `tsc --noEmit`, `lint`, `test` (20 passed), `build` y `handoff/check.mjs` (0 problemas) en verde.
 - [x] Si la ficha añade una migración: `alembic upgrade head` → `alembic downgrade -1` → `alembic upgrade head` sin errores sobre una **copia** de `data/app.db`, y `PRAGMA foreign_key_check` vacío después. Si no migra, escribir «sin migración».
   - Verificado: sin migración.
-- [ ] Desde que exista el #15: `ruff check app tests` sin errores y el test de `alembic check` en verde.
-  - Pendiente de verificación manual: el #15 sigue abierto (ruff y `alembic check` no están instalados).
+- [x] Desde que exista el #15: `ruff check app tests` sin errores y el test de `alembic check` en verde.
+  - Verificado (al cerrar el #15, sobre el código actual): `ruff check app tests` → `All checks passed!` y `test_alembic_check` en verde.
 - [x] Desplegado con la skill `deploy`: `curl -s localhost:8000/api/health` devuelve `{"ok":true}` y `http://localhost:3100/login` responde 200.
   - Verificado: sin trabajos activos, reconstruidos `api`, `worker` y `frontend`; health `{"ok":true}`, `/login` 200, el contenedor `api` contiene `RuntimeSettings.method` y `GET /api/settings` sin sesión sigue en 401.
 - [ ] Regresión: la pantalla Configuración del admin y el rótulo del método para el user siguen funcionando.

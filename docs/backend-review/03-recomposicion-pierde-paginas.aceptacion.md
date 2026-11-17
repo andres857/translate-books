@@ -17,8 +17,8 @@ Ficha: [03-recomposicion-pierde-paginas.md](03-recomposicion-pierde-paginas.md).
   - Verificado: 152 passed, 1 skipped, 5 deselected (antes 149 passed + 3 nuevos).
 - [x] Si la ficha añade una migración: `alembic upgrade head` → `alembic downgrade -1` → `alembic upgrade head` sin errores sobre una **copia** de `data/app.db`, y `PRAGMA foreign_key_check` vacío después. Si no migra, escribir «sin migración».
   - Verificado: sin migración.
-- [ ] Desde que exista el #15: `ruff check app tests` sin errores y el test de `alembic check` en verde.
-  - Pendiente de verificación manual: el #15 sigue abierto (ruff y `alembic check` no están instalados).
+- [x] Desde que exista el #15: `ruff check app tests` sin errores y el test de `alembic check` en verde.
+  - Verificado (al cerrar el #15, sobre el código actual): `ruff check app tests` → `All checks passed!` y `test_alembic_check` en verde.
 - [x] Desplegado con la skill `deploy`: `curl -s localhost:8000/api/health` devuelve `{"ok":true}` y `http://localhost:3100/login` responde 200.
   - Verificado: sin trabajos activos, reconstruidos `api` y `worker`; health `{"ok":true}`, `/login` 200 y el contenedor `api` contiene el nuevo mensaje 409.
 - [ ] Regresión: en la revisión del admin, corregir un bloque y recomponer su página sigue funcionando (test `test_edit_and_recompose_only_that_page` en verde y prueba manual con un libro QA).
