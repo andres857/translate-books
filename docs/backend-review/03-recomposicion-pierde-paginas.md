@@ -2,7 +2,7 @@
 
 - **Severidad:** Medio
 - **Categoría:** Concurrencia
-- **Estado:** abierto
+- **Estado:** resuelto · commit(s) `30a919f`
 - **Ubicación:** `backend/app/api/routes_admin.py:138-153` (`recompose`) frente a `backend/app/worker.py:178-205` (`process_recompose`)
 - **Aceptación:** [03-recomposicion-pierde-paginas.aceptacion.md](03-recomposicion-pierde-paginas.aceptacion.md)
 
@@ -24,3 +24,12 @@ El admin cree que pidió dos recomposiciones y solo se hizo una; no hay error ni
 ## Corrección propuesta
 
 Decisión pendiente (preguntar): **(a)** responder 409 mientras el job esté `queued`/`running` con una recomposición, o **(b)** al terminar, releer `options` de la BD y quitar solo las páginas hechas, dejando el job en `queued` si quedan otras. (a) es más simple y coherente con #01.
+
+## Notas
+
+Decisión del usuario (16-nov-2026): opción **(a)**. `POST /api/admin/jobs/{id}/pages/{n}/recompose` responde 409
+(«Ya se está recomponiendo una página de este libro: espera a que termine.») cuando el job está en `queued` o
+`running` con una recomposición pedida; no se encolan páginas. Al implementarlo se vio que el endpoint ya daba 409
+en esos estados (por `status != "done"`, con el mensaje «tiene que estar terminado»), así que el hueco real era la
+carrera entre dos peticiones que leen «done» a la vez: el paso a `queued` es ahora un `UPDATE … WHERE status='done'`
+y, si no aplica, responde el mismo 409. El frontend no cambia: `compare.tsx` muestra el `detail` del error.
