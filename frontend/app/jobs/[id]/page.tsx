@@ -50,6 +50,8 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
   const [job, setJob] = useState<JobStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [missing, setMissing] = useState(false); // 404/403: no existe o no es de este usuario
+  // aviso de una descarga que no se pudo hacer; aparte de `error` porque el sondeo limpia ese en cada acierto
+  const [dlProblem, setDlProblem] = useState<string | null>(null);
   const [azw3, setAzw3] = useState(true);
 
   // el título de la pestaña lleva el nombre del libro (la metadata del segmento solo dice «Libro»)
@@ -71,6 +73,7 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
         if (!alive) return;
         setJob(j);
         setError(null);
+        if (j.status === "done" && !j.recomposing) setDlProblem(null); // ya se puede descargar
         if (!FINAL.includes(j.status)) timer = setTimeout(tick, 1500);
       } catch (e) {
         if (!alive) return;
@@ -125,7 +128,7 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
     jobId: job.id,
     disabled: job.recomposing,
     onProblem: (message: string | null, fresh?: JobStatus) => {
-      setError(message);
+      setDlProblem(message);
       if (fresh) setJob(fresh);
     },
   };
@@ -152,6 +155,7 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
       </div>
 
       {error && <div className="alert error" role="alert"><IconWarn /><span>{error}</span></div>}
+      {dlProblem && <div className="alert" role="status"><IconWarn /><span>{dlProblem}</span></div>}
       {job.error && <div className="alert error" role="alert"><IconWarn /><span>{job.error}</span></div>}
 
       {!done && (

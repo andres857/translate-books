@@ -25,6 +25,8 @@ export default function AdminJobPage({ params }: { params: Promise<{ id: string 
   const { id } = use(params);
   const [data, setData] = useState<JobSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // aviso de una descarga que no se pudo hacer; aparte de `error`, que reload() limpia en cada acierto
+  const [dlProblem, setDlProblem] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("compare");
   const [page, setPage] = useState(1);
   const [details, setDetails] = useState(false);
@@ -90,7 +92,7 @@ export default function AdminJobPage({ params }: { params: Promise<{ id: string 
     jobId: job.id,
     disabled: job.recomposing,
     onProblem: (message: string | null) => {
-      setError(message);
+      setDlProblem(message);
       if (message) void reload();
     },
   };
@@ -167,6 +169,7 @@ export default function AdminJobPage({ params }: { params: Promise<{ id: string 
       )}
 
       {error && <div className="alert error" role="alert"><IconWarn /><span>{error}</span></div>}
+      {dlProblem && job.status !== "done" && <div className="alert" role="status"><IconWarn /><span>{dlProblem}</span></div>}
       {job.recompose_error && <div className="alert error" role="alert"><IconWarn /><span>{job.recompose_error}</span></div>}
       {job.status !== "done" && !job.recomposing && (
         <div className="alert" role="status">
