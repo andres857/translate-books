@@ -59,6 +59,17 @@ def client_ip(request: Request) -> str:
     return (request.client.host if request.client else "")[:64]
 
 
+def from_trusted_proxy(request: Request) -> bool:
+    """La conexión llega de un proxy propio (TRUSTED_PROXIES): su IP no es la del usuario."""
+    import ipaddress
+
+    try:
+        ip = ipaddress.ip_address(client_ip(request))
+    except ValueError:
+        return False
+    return any(ip in net for net in get_settings().trusted_proxy_networks)
+
+
 def idle_expires_at(s: AuthSession) -> datetime:
     return aware(s.last_seen_at) + timedelta(minutes=get_settings().session_idle_minutes)
 

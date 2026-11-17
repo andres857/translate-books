@@ -61,7 +61,7 @@ def login(body: LoginIn, request: Request, response: Response, db: Session = Dep
     check_origin(request)
     email = normalize_email(body.email)
     ip = sessions.client_ip(request)
-    wait = rate_limit.hit(db, rate_limit.login_buckets(ip, email))
+    wait = rate_limit.hit(db, rate_limit.login_buckets(None if sessions.from_trusted_proxy(request) else ip, email))
     if wait:
         events.record(db, "login_rate_limited", ip=ip)
         db.commit()

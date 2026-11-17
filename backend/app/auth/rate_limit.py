@@ -36,10 +36,14 @@ def clear(db: Session, key: str) -> None:
         db.delete(row)
 
 
-def login_buckets(ip: str, email: str) -> list[tuple[str, int]]:
+def login_buckets(ip: str | None, email: str) -> list[tuple[str, int]]:
+    """Contadores de un intento de login. `ip=None`: IP desconocida (detrás de un proxy propio), sin cubo por IP;
+    si no, todos los usuarios compartirían el de la IP del proxy."""
     st = get_settings()
-    return [(f"ip:{ip}", st.login_max_per_ip), (email_bucket(email), st.login_max_per_email),
-            ("global", st.login_max_global)]
+    buckets = [(email_bucket(email), st.login_max_per_email), ("global", st.login_max_global)]
+    if ip:
+        buckets.insert(0, (f"ip:{ip}", st.login_max_per_ip))
+    return buckets
 
 
 def email_bucket(email: str) -> str:

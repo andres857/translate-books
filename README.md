@@ -144,6 +144,7 @@ Los estilos de toda la interfaz salen de `handoff/tokens.css` (copiado a `fronte
 | `APP_UID` / `APP_GID` | Usuario con el que corren los contenedores (dueño de `data/`). |
 | `CORS_ORIGINS` | Origen exacto del navegador (`http://localhost:WEB_PORT`): CORS y comprobación de `Origin` en escrituras. |
 | `ADMIN_BOOTSTRAP_EMAIL` / `ADMIN_BOOTSTRAP_PASSWORD` / `ADMIN_BOOTSTRAP_NAME` | Admin inicial (ver «Acceso»). |
+| `TRUSTED_PROXIES` | Redes del proxy propio (el frontend). Desde ellas la IP del usuario es desconocida y el límite de intentos usa solo el correo y el total. El compose usa las redes internas de Docker. |
 | `SESSION_MAX_HOURS` / `SESSION_IDLE_MINUTES` / `COOKIE_SECURE` | Duración de la sesión y cookie `Secure` (`auto`, `true`, `false`). |
 | `EBOOK_CONVERT_BIN` | Ruta de `ebook-convert` (Calibre) si no está en el `PATH`. |
 

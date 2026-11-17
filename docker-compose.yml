@@ -12,6 +12,8 @@ x-backend: &backend
     DATABASE_URL: sqlite:////data/app.db
     DATA_DIR: /data
     CORS_ORIGINS: http://localhost:${WEB_PORT:-3000}
+    # el frontend reenvía /api/* desde la red interna de Docker: esas IPs son del proxy, no de los usuarios
+    TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.16.0.0/12,192.168.0.0/16}
     # dentro de Docker el api habla con SeaweedFS por la red interna; las URL prefirmadas
     # se firman para el host que ve el navegador (S3_PUBLIC_ENDPOINT)
     S3_ENDPOINT: ${S3_INTERNAL_ENDPOINT:-http://seaweedfs:8333}

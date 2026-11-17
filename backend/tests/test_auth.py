@@ -322,3 +322,65 @@ def test_recover_cli(app, capsys):
         assert row.role == "admin" and row.active and row.must_change_password
     _, r = do_login(app, u.email, temp)
     assert r.status_code == 200 and r.json()["session"]["kind"] == "restricted"
+
+
+# ---- límite de intentos detrás del proxy del frontend (ficha 17)
+
+def _client_from(app, host):
+    from fastapi.testclient import TestClient
+
+    from app.config import get_settings
+
+    c = TestClient(app, client=(host, 40000))
+    c.headers.update({"Origin": get_settings().allowed_origins[0], "X-Requested-With": "traductor"})
+    return c
+
+
+@pytest.fixture
+def trusted_proxy(monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setenv("TRUSTED_PROXIES", "172.16.0.0/12")
+    get_settings.cache_clear()
+    yield "172.27.0.5"
+    get_settings.cache_clear()
+
+
+def test_trusted_proxy_does_not_share_ip_bucket(app, trusted_proxy):
+    c = _client_from(app, trusted_proxy)
+    for i in range(11):
+        r = c.post("/api/auth/login", json={"email": f"otro-{i}@example.com", "password": "mala-clave-1"})
+        assert r.status_code == 401, (i, r.status_code)
+    from app.db.models import AuthRateLimit
+    from app.db.session import session_scope
+
+    with session_scope() as db:
+        assert db.get(AuthRateLimit, f"ip:{trusted_proxy}") is None
+
+
+def test_untrusted_ip_still_limited(app, trusted_proxy):
+    c = _client_from(app, "203.0.113.9")
+    for i in range(10):
+        assert c.post("/api/auth/login", json={"email": f"x-{i}@example.com", "password": "m"}).status_code == 401
+    r = c.post("/api/auth/login", json={"email": "x-final@example.com", "password": "m"})
+    assert r.status_code == 429 and int(r.headers["retry-after"]) > 0
+
+
+def test_email_bucket_still_applies_behind_proxy(app, trusted_proxy):
+    c = _client_from(app, trusted_proxy)
+    for _ in range(10):
+        assert c.post("/api/auth/login", json={"email": "victima@example.com", "password": "m"}).status_code == 401
+    assert c.post("/api/auth/login", json={"email": "victima@example.com", "password": "m"}).status_code == 429
+
+
+def test_client_forwarded_for_is_ignored(app, trusted_proxy):
+    """El cliente no elige su cubo: un X-Forwarded-For enviado por él no cuenta."""
+    from app.db.models import AuthRateLimit
+    from app.db.session import session_scope
+
+    c = _client_from(app, "203.0.113.20")
+    c.post("/api/auth/login", json={"email": "xff@example.com", "password": "m"},
+           headers={"X-Forwarded-For": "198.51.100.7"})
+    with session_scope() as db:
+        assert db.get(AuthRateLimit, "ip:198.51.100.7") is None
+        assert db.get(AuthRateLimit, "ip:203.0.113.20").count == 1

@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     login_max_per_ip: int = 10
     login_max_per_email: int = 10
     login_max_global: int = 200
+    # IPs o redes (CIDR) de proxies propios, separadas por comas: el frontend Next reenvía /api/* y todas sus
+    # peticiones llegan con su IP. Desde ellas la IP del cliente es desconocida (Next no añade
+    # X-Forwarded-For), así que el límite por IP no se aplica; siguen el de correo y el total.
+    trusted_proxies: str = ""
 
     max_upload_mb: int = 200
     translation_concurrency: int = 10
@@ -53,6 +57,16 @@ class Settings(BaseSettings):
     @property
     def allowed_origins(self) -> list[str]:
         return [o.strip().rstrip("/") for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def trusted_proxy_networks(self) -> list:
+        import ipaddress
+
+        nets = []
+        for item in self.trusted_proxies.split(","):
+            if item.strip():
+                nets.append(ipaddress.ip_network(item.strip(), strict=False))
+        return nets
 
     @property
     def secure_cookies(self) -> bool:

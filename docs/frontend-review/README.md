@@ -32,6 +32,7 @@ marcan (`- [x]`) al comprobarlas tras el arreglo.
 | 14 | Medio | [Sin ESLint ni tests: hay `eslint-disable` que no comprueba nadie](14-sin-eslint-ni-tests.md) | [criterios](14-sin-eslint-ni-tests.aceptacion.md) |
 | 15 | Bajo | [Todas las pestañas del navegador tienen el mismo título](15-titulos-por-pagina.md) | [criterios](15-titulos-por-pagina.aceptacion.md) |
 | 16 | Medio | [setState síncrono dentro de efectos (20 casos)](16-setstate-en-efectos.md) | [criterios](16-setstate-en-efectos.aceptacion.md) |
+| 17 | Alto | [El límite de intentos por IP es compartido por todos los usuarios](17-limite-login-ip-compartida.md) | [criterios](17-limite-login-ip-compartida.aceptacion.md) |
 
 ## Orden recomendado
 
