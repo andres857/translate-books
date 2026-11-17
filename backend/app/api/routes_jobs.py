@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import threading
+import weakref
 from pathlib import Path
 from typing import Literal
 
@@ -204,8 +205,9 @@ def presign_book(body: PresignBookIn, storage: StoragePort = Depends(get_storage
     if not body.filename.lower().endswith(".pdf"):
         raise HTTPException(400, "Solo se admiten archivos PDF.")
     _check_book_size(body.size)
-    p = storage_call(storage.presigned_upload_url, generate_key(_incoming(p), "application/pdf"), "application/pdf", 900)
-    return {"url": p.url, "key": p.key, "expires_at": p.expires_at.isoformat(), "method": "PUT",
+    presigned = storage_call(storage.presigned_upload_url, generate_key(_incoming(p), "application/pdf"),
+                             "application/pdf", 900)
+    return {"url": presigned.url, "key": presigned.key, "expires_at": presigned.expires_at.isoformat(), "method": "PUT",
             "headers": {"Content-Type": "application/pdf"}}
 
 
@@ -288,13 +290,25 @@ def download(job_id: int, format: Literal["pdf", "epub", "azw3"] = "pdf", db: Se
     return FileResponse(job.output_path, media_type="application/pdf", filename=Path(job.output_path).name)
 
 
-_epub_locks: dict[int, threading.Lock] = {}
+# Un lock por (formato, trabajo) mientras alguien lo usa: el diccionario solo guarda referencias débiles, así que
+# la entrada desaparece cuando ninguna descarga la retiene (no crece con cada trabajo descargado).
+_build_locks: weakref.WeakValueDictionary[tuple[str, int], threading.Lock] = weakref.WeakValueDictionary()
+_build_locks_guard = threading.Lock()
+
+
+def _build_lock(kind: str, job_id: int) -> threading.Lock:
+    """El mismo lock para todas las descargas simultáneas de un formato de un trabajo."""
+    with _build_locks_guard:  # get + set no es atómico en WeakValueDictionary
+        lock = _build_locks.get((kind, job_id))
+        if lock is None:
+            lock = _build_locks[(kind, job_id)] = threading.Lock()
+        return lock
 
 
 def _epub_for(db: Session, job: Job) -> Path:
     """EPUB para Kindle: se genera desde los segmentos guardados la primera vez (o si el PDF cambió)."""
     path = epub_path_for(job.output_path)
-    with _epub_locks.setdefault(job.id, threading.Lock()):
+    with _build_lock("epub", job.id):
         if not path.exists() or path.stat().st_mtime < Path(job.output_path).stat().st_mtime:
             try:
                 build_epub_for_job(db, job)
@@ -310,7 +324,7 @@ def _azw3_for(db: Session, job: Job) -> Path:
                                  "(sudo apt install calibre). El EPUB sigue disponible.")
     epub = _epub_for(db, job)
     path = azw3_path_for(job.output_path)
-    with _epub_locks.setdefault(-job.id, threading.Lock()):
+    with _build_lock("azw3", job.id):
         if not path.exists() or path.stat().st_mtime < epub.stat().st_mtime:
             try:
                 build_azw3(epub, path)
@@ -347,5 +361,5 @@ def preview(job_id: int, number: int, version: Literal["original", "translated"]
 def pages(job_id: int, db: Session = Depends(get_db), p: Principal = Depends(require_user)):
     get_visible_job(db, job_id, p)
     rows = db.scalars(select(Page).where(Page.job_id == job_id).order_by(Page.number))
-    return [{"number": p.number, "kind": p.kind, "needs_review": p.needs_review, "reasons": p.review_reasons}
-            for p in rows]
+    return [{"number": pg.number, "kind": pg.kind, "needs_review": pg.needs_review, "reasons": pg.review_reasons}
+            for pg in rows]

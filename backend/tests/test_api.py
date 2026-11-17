@@ -197,3 +197,58 @@ def test_job_status_json_unchanged(client):
                          {"page": 5, "reasons": ["longitud", "glosario"]}],
     }
     assert [j for j in user_client.get("/api/jobs").json() if j["id"] == job_id] == [st]
+
+
+def _fake_epub_job(tmp_path, job_id: int):
+    """Trabajo mínimo para _epub_for: solo hace falta id y un PDF de salida existente."""
+    from types import SimpleNamespace
+
+    pdf = tmp_path / f"job{job_id}.pdf"
+    pdf.write_bytes(b"%PDF-1.4")
+    return SimpleNamespace(id=job_id, output_path=str(pdf))
+
+
+def test_concurrent_epub_downloads_build_once(tmp_path, monkeypatch):
+    import threading
+    import time
+
+    from app.api import routes_jobs
+    from app.pipeline.epub import epub_path_for
+
+    calls = []
+
+    def fake_build(db, job):
+        calls.append(job.id)
+        time.sleep(0.2)  # sin lock, la segunda descarga también vería que falta el archivo
+        epub_path_for(job.output_path).write_bytes(b"epub")
+
+    monkeypatch.setattr(routes_jobs, "build_epub_for_job", fake_build)
+    job = _fake_epub_job(tmp_path, 900001)
+    start = threading.Barrier(2)
+    paths = []
+
+    def download():
+        start.wait()
+        paths.append(routes_jobs._epub_for(None, job))
+
+    ts = [threading.Thread(target=download) for _ in range(2)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    assert calls == [job.id] and len(paths) == 2 and paths[0].read_bytes() == b"epub"
+
+
+def test_epub_locks_do_not_grow_with_jobs(tmp_path, monkeypatch):
+    from app.api import routes_jobs
+    from app.pipeline.epub import epub_path_for
+
+    monkeypatch.setattr(routes_jobs, "build_epub_for_job",
+                        lambda db, job: epub_path_for(job.output_path).write_bytes(b"epub"))
+    before = len(routes_jobs._build_locks)
+    for i in range(100):
+        routes_jobs._epub_for(None, _fake_epub_job(tmp_path, 910000 + i))
+    assert len(routes_jobs._build_locks) <= max(before, 1)
+    # mientras una descarga retiene el lock, las demás del mismo trabajo reciben el mismo
+    lock = routes_jobs._build_lock("epub", 1)
+    assert routes_jobs._build_lock("epub", 1) is lock and routes_jobs._build_lock("azw3", 1) is not lock
