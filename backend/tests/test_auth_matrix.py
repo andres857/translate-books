@@ -30,7 +30,7 @@ def ctx(tmp_path_factory, sample_pdf):
 
 def test_visitor_gets_401_everywhere(ctx):
     anon, job = ctx["anon"], ctx["job"]
-    for path in ("/api/jobs", f"/api/jobs/{job}", f"/api/jobs/{job}/events", "/api/settings", "/api/users",
+    for path in ("/api/jobs", f"/api/jobs/{job}", "/api/settings", "/api/users",
                  f"/api/admin/jobs/{job}/summary", "/api/admin/playground/books", "/api/glossary",
                  f"/api/jobs/{job}/pages/1/preview", f"/api/jobs/{job}/download"):
         assert anon.get(path).status_code == 401, path
@@ -53,7 +53,7 @@ def test_owner_sees_and_manages_own_job(ctx):
 def test_other_user_cannot_reach_the_job(ctx):
     other, job = ctx["other"], ctx["job"]
     assert other.get("/api/jobs").json() == []
-    for path in (f"/api/jobs/{job}", f"/api/jobs/{job}/events", f"/api/jobs/{job}/pages",
+    for path in (f"/api/jobs/{job}", f"/api/jobs/{job}/pages",
                  f"/api/jobs/{job}/pages/1/preview?version=original", f"/api/jobs/{job}/download",
                  f"/api/jobs/{job}/report"):
         assert other.get(path).status_code == 404, path
@@ -86,23 +86,8 @@ def test_admin_sees_every_job(ctx):
     assert admin.get(f"/api/admin/jobs/{job}/summary").status_code == 200
 
 
-def test_events_stream_stops_when_session_is_revoked(ctx):
-    """El SSE revalida la sesión en cada vuelta: al revocarla, el flujo termina con `unauthorized`."""
-    from app.auth import sessions
-    from app.db.models import AuthSession, Job
-    from app.db.session import session_scope
-
-    owner, job = ctx["owner"], ctx["job"]  # última prueba del módulo: revoca las sesiones del dueño
-    with session_scope() as db:
-        db.get(Job, job).status = "running"  # sin estado final: el flujo seguiría abierto
-    with owner.stream("GET", f"/api/jobs/{job}/events") as r:
-        assert r.status_code == 200
-        lines = r.iter_lines()
-        assert next(lines).startswith("data: ")
-        with session_scope() as db:
-            sessions.revoke_all(db, owner.user.id)
-        rest = "\n".join(lines)
-    assert "event: unauthorized" in rest
-    with session_scope() as db:
-        assert db.query(AuthSession).filter(AuthSession.user_id == owner.user.id,
-                                            AuthSession.revoked_at.is_(None)).count() == 0
+def test_events_endpoint_was_removed(ctx):
+    """#07: el SSE `/events` no lo usaba nadie (el frontend hace polling) y se quitó."""
+    owner, job = ctx["owner"], ctx["job"]
+    assert owner.get(f"/api/jobs/{job}/events").status_code in (404, 405)
+    assert all("/events" not in path for path in ctx["app"].openapi()["paths"])

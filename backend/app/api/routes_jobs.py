@@ -1,26 +1,23 @@
 from __future__ import annotations
 
-import asyncio
 import hashlib
-import json
 import threading
 from pathlib import Path
 from typing import Literal
 
 import pymupdf
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload, object_session
 
 from app.api.schemas import JobRead, OkOut, PageRead, PresignBookOut
 from app.api.storage_errors import storage_call
-from app.auth import sessions as auth_sessions
 from app.auth.deps import Principal, require_admin, require_user
 from app.config import get_settings
-from app.db.models import AuthSession, Document, Job, Page
-from app.db.session import SessionLocal, get_db
+from app.db.models import Document, Job, Page
+from app.db.session import get_db
 from app.jobs_service import delete_job_and_files, ensure_not_busy, get_visible_job
 from app.pipeline.azw3 import Azw3Unavailable, azw3_path_for, build_azw3, ebook_convert_available
 from app.pipeline.digitize import ocrmypdf_available
@@ -246,37 +243,6 @@ def list_jobs(db: Session = Depends(get_db), p: Principal = Depends(require_user
 @router.get("/{job_id}", response_model=JobRead)
 def get_job(job_id: int, db: Session = Depends(get_db), p: Principal = Depends(require_user)):
     return job_status(get_visible_job(db, job_id, p))
-
-
-@router.get("/{job_id}/events")
-async def job_events(job_id: int, p: Principal = Depends(require_user)):
-    """Progreso en tiempo real (Server-Sent Events). La sesión se revalida en cada vuelta: si se revoca o
-    caduca, el flujo se corta."""
-    with SessionLocal() as s:
-        get_visible_job(s, job_id, p)
-    session_id = p.session.id
-
-    async def gen():
-        last = None
-        while True:
-            with SessionLocal() as s:
-                if not auth_sessions.is_valid(s.get(AuthSession, session_id)):
-                    yield "event: unauthorized\ndata: {}\n\n"
-                    return
-                job = s.get(Job, job_id)
-                if not job:
-                    yield "event: error\ndata: {}\n\n"
-                    return
-                payload = json.dumps(job_status(job), ensure_ascii=False)
-                status = job.status
-            if payload != last:
-                yield f"data: {payload}\n\n"
-                last = payload
-            if status in ("done", "failed", "cancelled"):
-                return
-            await asyncio.sleep(1)
-
-    return StreamingResponse(gen(), media_type="text/event-stream")
 
 
 @router.post("/{job_id}/cancel", response_model=JobRead)

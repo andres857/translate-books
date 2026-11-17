@@ -168,9 +168,9 @@ def test_users_snapshot(app):
                                (f'"page":{position},', '"page":"<page>",')])
 
 
-# rutas de estos routers que devuelven archivos, PNG o streaming: no llevan `response_model`
-NOT_JSON = {("GET", "/api/jobs/{job_id}/events"), ("GET", "/api/jobs/{job_id}/download"),
-            ("GET", "/api/jobs/{job_id}/report"), ("GET", "/api/jobs/{job_id}/pages/{number}/preview")}
+# rutas de estos routers que devuelven archivos o PNG: no llevan `response_model`
+NOT_JSON = {("GET", "/api/jobs/{job_id}/download"), ("GET", "/api/jobs/{job_id}/report"),
+            ("GET", "/api/jobs/{job_id}/pages/{number}/preview")}
 
 
 def test_json_routes_declare_response_model():
