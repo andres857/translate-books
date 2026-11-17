@@ -2,7 +2,7 @@
 
 - **Severidad:** Medio
 - **Categoría:** Datos y estados (React)
-- **Estado:** abierto
+- **Estado:** resuelto · commit `bf5cc04` · criterios verificados en [16-setstate-en-efectos.aceptacion.md](16-setstate-en-efectos.aceptacion.md)
 - **Ubicación:** 20 efectos en 9 archivos: `app/admin/jobs/[id]/compare.tsx` (4), `app/admin/jobs/[id]/page.tsx`, `app/admin/jobs/[id]/terms.tsx`, `app/admin/playground/history/page.tsx` (2), `app/admin/playground/page.tsx` (4), `app/admin/playground/panel.tsx` (2), `app/admin/playground/scope-view.tsx` (5), `lib/auth.tsx`
 - **Aceptación:** [16-setstate-en-efectos.aceptacion.md](16-setstate-en-efectos.aceptacion.md)
 - **Origen:** lo detectó ESLint al resolver el #14 (regla `react-hooks/set-state-in-effect` de `eslint-config-next` 16)
