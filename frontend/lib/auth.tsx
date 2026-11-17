@@ -6,6 +6,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { AUTH_EVENT, getMe, logout as apiLogout, setCsrfToken, type AuthState } from "./api";
+import { safeNext } from "./redirect";
 
 type AuthContext = {
   state: AuthState | null;
@@ -27,10 +28,7 @@ export function useAuth(): AuthContext {
   return c;
 }
 
-/** Destino tras el login: solo rutas internas (evita redirecciones abiertas). */
-export function safeNext(next: string | null): string {
-  return next && next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/login") ? next : "/";
-}
+export { safeNext } from "./redirect";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState | null>(null);
