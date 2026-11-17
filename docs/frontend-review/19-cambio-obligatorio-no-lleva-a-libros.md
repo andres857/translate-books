@@ -2,7 +2,7 @@
 
 - **Severidad:** Bajo
 - **Categoría:** Bug (flujo de login)
-- **Estado:** abierto
+- **Estado:** resuelto · commit `b5fcb48` · criterios verificados en [19-cambio-obligatorio-no-lleva-a-libros.aceptacion.md](19-cambio-obligatorio-no-lleva-a-libros.aceptacion.md)
 - **Ubicación:** `frontend/app/change-password/page.tsx` (`submit`) y `frontend/lib/auth.tsx` (`routeFor`)
 - **Aceptación:** [19-cambio-obligatorio-no-lleva-a-libros.aceptacion.md](19-cambio-obligatorio-no-lleva-a-libros.aceptacion.md)
 - **Origen:** encontrado en la regresión final del README («cambio obligatorio de contraseña»)

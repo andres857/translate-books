@@ -2,7 +2,7 @@
 
 - **Severidad:** Alto
 - **Categoría:** Bug (permisos en UI)
-- **Estado:** abierto
+- **Estado:** resuelto · commit `70e8ac8` · criterios verificados en [02-enlaces-configuracion-usuario.aceptacion.md](02-enlaces-configuracion-usuario.aceptacion.md)
 - **Ubicación:** `frontend/app/components/upload-book.tsx:72` y `:147`
 - **Aceptación:** [02-enlaces-configuracion-usuario.aceptacion.md](02-enlaces-configuracion-usuario.aceptacion.md)
 

@@ -2,7 +2,7 @@
 
 - **Severidad:** Crítico
 - **Categoría:** Seguridad
-- **Estado:** abierto
+- **Estado:** resuelto · commit `24f5f04` · criterios verificados en [01-open-redirect-login.aceptacion.md](01-open-redirect-login.aceptacion.md)
 - **Ubicación:** `frontend/lib/auth.tsx:31` (`safeNext`) y su uso en `frontend/lib/auth.tsx:115`
 - **Aceptación:** [01-open-redirect-login.aceptacion.md](01-open-redirect-login.aceptacion.md)
 

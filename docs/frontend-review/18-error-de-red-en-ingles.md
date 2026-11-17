@@ -2,7 +2,7 @@
 
 - **Severidad:** Bajo
 - **Categoría:** UX / manejo de errores
-- **Estado:** abierto
+- **Estado:** resuelto · commit `00c859c` · criterios verificados en [18-error-de-red-en-ingles.aceptacion.md](18-error-de-red-en-ingles.aceptacion.md)
 - **Ubicación:** `frontend/lib/api.ts` (`apiFetch`/`parse`): todas las vistas que muestran `(e as Error).message`
 - **Aceptación:** [18-error-de-red-en-ingles.aceptacion.md](18-error-de-red-en-ingles.aceptacion.md)
 - **Origen:** visto al verificar el #03 y el #06 con el api inalcanzable

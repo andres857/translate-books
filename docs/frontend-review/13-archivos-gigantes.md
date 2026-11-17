@@ -2,7 +2,7 @@
 
 - **Severidad:** Medio
 - **Categoría:** Estructura / mantenibilidad
-- **Estado:** abierto
+- **Estado:** resuelto · commits `8207e98`, `4989d9c`, `1397313` · criterios verificados en [13-archivos-gigantes.aceptacion.md](13-archivos-gigantes.aceptacion.md)
 - **Ubicación:** `frontend/app/admin/playground/page.tsx` (865 líneas), `frontend/app/admin/playground/scope-view.tsx` (562), `frontend/lib/api.ts` (793)
 - **Aceptación:** [13-archivos-gigantes.aceptacion.md](13-archivos-gigantes.aceptacion.md)
 

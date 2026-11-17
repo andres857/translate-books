@@ -2,7 +2,7 @@
 
 - **Severidad:** Bajo
 - **Categoría:** UX / manejo de errores
-- **Estado:** abierto
+- **Estado:** resuelto · commits `b261e8f`, `ac640da` · criterios verificados en [08-descargas-muestran-json.aceptacion.md](08-descargas-muestran-json.aceptacion.md)
 - **Ubicación:** `frontend/app/jobs/[id]/page.tsx:157-161` y `frontend/app/admin/jobs/[id]/page.tsx:115-125`
 - **Aceptación:** [08-descargas-muestran-json.aceptacion.md](08-descargas-muestran-json.aceptacion.md)
 

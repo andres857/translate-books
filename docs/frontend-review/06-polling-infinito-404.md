@@ -2,7 +2,7 @@
 
 - **Severidad:** Bajo
 - **Categoría:** Robustez
-- **Estado:** abierto
+- **Estado:** resuelto · commit `b53c76c` · criterios verificados en [06-polling-infinito-404.aceptacion.md](06-polling-infinito-404.aceptacion.md)
 - **Ubicación:** `frontend/app/jobs/[id]/page.tsx:63-67`
 - **Aceptación:** [06-polling-infinito-404.aceptacion.md](06-polling-infinito-404.aceptacion.md)
 

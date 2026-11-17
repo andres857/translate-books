@@ -2,7 +2,7 @@
 
 - **Severidad:** Medio
 - **Categoría:** Bug (pérdida de datos)
-- **Estado:** abierto
+- **Estado:** resuelto · commit `97d7289` · criterios verificados en [04-compare-descarta-borradores.aceptacion.md](04-compare-descarta-borradores.aceptacion.md)
 - **Ubicación:** `frontend/app/admin/jobs/[id]/compare.tsx:147-150` (efecto que hace `setDrafts({})`)
 - **Aceptación:** [04-compare-descarta-borradores.aceptacion.md](04-compare-descarta-borradores.aceptacion.md)
 

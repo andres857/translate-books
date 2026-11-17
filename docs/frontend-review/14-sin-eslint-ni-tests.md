@@ -2,7 +2,7 @@
 
 - **Severidad:** Medio
 - **Categoría:** Herramientas / calidad
-- **Estado:** abierto
+- **Estado:** resuelto · commit `5528cb1` · criterios verificados en [14-sin-eslint-ni-tests.aceptacion.md](14-sin-eslint-ni-tests.aceptacion.md)
 - **Ubicación:** `frontend/package.json` (scripts `dev`, `build`, `start`, `typecheck`); 11 comentarios `eslint-disable`
 - **Aceptación:** [14-sin-eslint-ni-tests.aceptacion.md](14-sin-eslint-ni-tests.aceptacion.md)
 

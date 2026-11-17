@@ -2,7 +2,7 @@
 
 - **Severidad:** Alto
 - **Categoría:** Seguridad / disponibilidad (backend)
-- **Estado:** abierto
+- **Estado:** resuelto · commit `48f7dd2` · criterios verificados en [17-limite-login-ip-compartida.aceptacion.md](17-limite-login-ip-compartida.aceptacion.md)
 - **Ubicación:** `backend/app/auth/rate_limit.py:39` (`login_buckets`), `backend/app/auth/sessions.py:58` (`client_ip`), `backend/app/api/routes_auth.py:63-64`
 - **Aceptación:** [17-limite-login-ip-compartida.aceptacion.md](17-limite-login-ip-compartida.aceptacion.md)
 - **Origen:** encontrado al verificar el #02 en el navegador (el login dejó de responder)

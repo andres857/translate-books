@@ -10,8 +10,8 @@ Ficha: [08-descargas-muestran-json.md](08-descargas-muestran-json.md). Marca cad
   - Verificado: sesión revocada con logout desde otra pestaña del mismo navegador; «Descargar PDF» → `/login?next=%2Fjobs%2F7`, sin JSON en pantalla.
 - [x] Con todo listo, PDF, EPUB, AZW3 y el reporte se descargan con su nombre de archivo correcto.
   - Verificado: /jobs/7: «Página de qa uno (ES).pdf», «… (ES).epub», «… (ES).azw3» y «reporte-traduccion.json», sin salir de /jobs/7; /admin/jobs/7: los mismos cuatro desde el botón dividido y su menú.
-- [ ] Descargar un PDF grande (≥ 100 MB) no congela la pestaña ni dispara la memoria (Administrador de tareas del navegador).
-  - Pendiente de verificación manual: no hay ningún PDF ≥ 100 MB en esta instalación (el mayor, el libro 1, pesa 65 MB). Con ese archivo: descarga en 1 s, memoria JS de la pestaña de 16,7 a 17,4 MB y la pestaña responde. La descarga es un enlace normal (sin blob), así que el tamaño no pasa por la memoria de la pestaña.
+- [x] Descargar un PDF grande (≥ 100 MB) no congela la pestaña ni dispara la memoria (Administrador de tareas del navegador).
+  - Verificado: PDF QA de 110 MB (una página con una imagen casi blanca, sin texto: no llama al modelo), subido como qa-user y traducido (job 14). «Descargar PDF» en /jobs/14 → «original (ES).pdf» de 110 MB en 1 s; memoria JS de la pestaña de 5,3 a 5,7 MB; la pestaña responde en 4 ms como máximo (6 muestras durante la descarga) y sigue en /jobs/14.
 
 ## Comprobaciones comunes
 

@@ -2,7 +2,7 @@
 
 - **Severidad:** Medio
 - **Categoría:** Estados (convenciones de Next)
-- **Estado:** abierto
+- **Estado:** resuelto · commit `1030a06` · criterios verificados en [12-sin-error-not-found.aceptacion.md](12-sin-error-not-found.aceptacion.md)
 - **Ubicación:** `frontend/app/` (no existen `error.tsx`, `global-error.tsx` ni `not-found.tsx`)
 - **Aceptación:** [12-sin-error-not-found.aceptacion.md](12-sin-error-not-found.aceptacion.md)
 

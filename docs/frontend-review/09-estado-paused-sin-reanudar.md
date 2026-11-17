@@ -2,7 +2,7 @@
 
 - **Severidad:** Bajo
 - **Categoría:** Consistencia
-- **Estado:** abierto
+- **Estado:** resuelto · commit `a2b52ff` · criterios verificados en [09-estado-paused-sin-reanudar.aceptacion.md](09-estado-paused-sin-reanudar.aceptacion.md)
 - **Ubicación:** `frontend/app/jobs/[id]/page.tsx:62` y `:94`
 - **Aceptación:** [09-estado-paused-sin-reanudar.aceptacion.md](09-estado-paused-sin-reanudar.aceptacion.md)
 

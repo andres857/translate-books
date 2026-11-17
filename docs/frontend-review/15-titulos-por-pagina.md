@@ -2,7 +2,7 @@
 
 - **Severidad:** Bajo
 - **Categoría:** SEO / UX
-- **Estado:** abierto
+- **Estado:** resuelto · commits `4546c62`, `f85e125` · criterios verificados en [15-titulos-por-pagina.aceptacion.md](15-titulos-por-pagina.aceptacion.md)
 - **Ubicación:** `frontend/app/layout.tsx` (única `metadata`: «AstroBooks · Traductor de libros»)
 - **Aceptación:** [15-titulos-por-pagina.aceptacion.md](15-titulos-por-pagina.aceptacion.md)
 

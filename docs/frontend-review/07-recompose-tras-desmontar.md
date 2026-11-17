@@ -2,7 +2,7 @@
 
 - **Severidad:** Bajo
 - **Categoría:** Robustez
-- **Estado:** abierto
+- **Estado:** resuelto · commit `845e177` · criterios verificados en [07-recompose-tras-desmontar.aceptacion.md](07-recompose-tras-desmontar.aceptacion.md)
 - **Ubicación:** `frontend/app/admin/jobs/[id]/compare.tsx:219-243` (`recompose`)
 - **Aceptación:** [07-recompose-tras-desmontar.aceptacion.md](07-recompose-tras-desmontar.aceptacion.md)
 

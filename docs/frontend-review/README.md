@@ -12,6 +12,16 @@ marcan (`- [x]`) al comprobarlas tras el arreglo.
 - `npm run build`: correcto, 13 rutas dinámicas + proxy.
 - ESLint: no instalado. Tests: no hay (ver #14).
 
+## Estado final (17 de noviembre de 2026)
+
+- Resueltos con todos sus criterios verificados: los 15 de la revisión y tres encontrados durante el trabajo
+  (#17 límite de login compartido, #18 mensaje de red en inglés, #19 cambio obligatorio sin llegar a Libros).
+- Abierto: #16 (setState dentro de efectos, 20 casos). ESLint lo deja en aviso hasta resolverlo.
+- `npm run lint`: 19 problems (0 errors, 19 warnings) (todos del #16). `npm run test`: Tests 20 passed (20). `npm run test:e2e`: 1 passed.
+  `npm run build`: correcto. Backend `pytest -q -m "not slow and not s3"`: 138 passed, 1 skipped, 5 deselected, 1 warning in 41.23s.
+- Verificación en navegador con Chrome (Playwright) y las cuentas `qa-admin@astrobooks.local` y
+  `qa-user@astrobooks.local`, desactivadas al terminar.
+
 ## Problemas
 
 | # | Severidad | Problema | Aceptación | Estado |
@@ -33,8 +43,8 @@ marcan (`- [x]`) al comprobarlas tras el arreglo.
 | 15 | Bajo | [Todas las pestañas del navegador tienen el mismo título](15-titulos-por-pagina.md) | [criterios](15-titulos-por-pagina.aceptacion.md) | resuelto (4546c62, f85e125) |
 | 16 | Medio | [setState síncrono dentro de efectos (20 casos)](16-setstate-en-efectos.md) | [criterios](16-setstate-en-efectos.aceptacion.md) | abierto |
 | 17 | Alto | [El límite de intentos por IP es compartido por todos los usuarios](17-limite-login-ip-compartida.md) | [criterios](17-limite-login-ip-compartida.aceptacion.md) | resuelto (48f7dd2) |
-| 18 | Bajo | [Un fallo de red muestra «Failed to fetch» en inglés](18-error-de-red-en-ingles.md) | [criterios](18-error-de-red-en-ingles.aceptacion.md) | abierto |
-| 19 | Bajo | [Tras el cambio obligatorio de contraseña no se llega a Libros](19-cambio-obligatorio-no-lleva-a-libros.md) | [criterios](19-cambio-obligatorio-no-lleva-a-libros.aceptacion.md) | abierto |
+| 18 | Bajo | [Un fallo de red muestra «Failed to fetch» en inglés](18-error-de-red-en-ingles.md) | [criterios](18-error-de-red-en-ingles.aceptacion.md) | resuelto (00c859c) |
+| 19 | Bajo | [Tras el cambio obligatorio de contraseña no se llega a Libros](19-cambio-obligatorio-no-lleva-a-libros.md) | [criterios](19-cambio-obligatorio-no-lleva-a-libros.aceptacion.md) | resuelto (b5fcb48) |
 
 ## Orden recomendado
 

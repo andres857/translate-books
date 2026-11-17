@@ -2,7 +2,7 @@
 
 - **Severidad:** Bajo
 - **Categoría:** Pureza (React)
-- **Estado:** abierto
+- **Estado:** resuelto · commit `e1073f3` · criterios verificados en [10-efecto-dentro-de-setstate.aceptacion.md](10-efecto-dentro-de-setstate.aceptacion.md)
 - **Ubicación:** `frontend/app/admin/jobs/[id]/terms.tsx:44-47`
 - **Aceptación:** [10-efecto-dentro-de-setstate.aceptacion.md](10-efecto-dentro-de-setstate.aceptacion.md)
 

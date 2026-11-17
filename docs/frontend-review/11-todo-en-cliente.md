@@ -2,7 +2,7 @@
 
 - **Severidad:** Medio
 - **Categoría:** Frontera servidor/cliente
-- **Estado:** abierto
+- **Estado:** resuelto · commits `a751dfb`, `2591661` · criterios verificados en [11-todo-en-cliente.aceptacion.md](11-todo-en-cliente.aceptacion.md)
 - **Ubicación:** Las 10 `page.tsx` con `"use client"`; `frontend/app/components/app-shell.tsx` (no renderiza nada hasta conocer la sesión)
 - **Aceptación:** [11-todo-en-cliente.aceptacion.md](11-todo-en-cliente.aceptacion.md)
 

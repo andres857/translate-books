@@ -2,7 +2,7 @@
 
 - **Severidad:** Medio
 - **Categoría:** Datos (condición de carrera)
-- **Estado:** abierto
+- **Estado:** resuelto · commit `b443972` · criterios verificados en [05-carreras-en-cargas.aceptacion.md](05-carreras-en-cargas.aceptacion.md)
 - **Ubicación:** `frontend/app/admin/jobs/[id]/compare.tsx:137-145` (`load`) y `frontend/app/admin/playground/page.tsx:146-169` (`listChapters`)
 - **Aceptación:** [05-carreras-en-cargas.aceptacion.md](05-carreras-en-cargas.aceptacion.md)
 

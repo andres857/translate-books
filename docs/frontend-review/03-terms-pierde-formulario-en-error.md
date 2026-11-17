@@ -2,7 +2,7 @@
 
 - **Severidad:** Medio
 - **Categoría:** Bug (pérdida de datos)
-- **Estado:** abierto
+- **Estado:** resuelto · commit `505f5fa` · criterios verificados en [03-terms-pierde-formulario-en-error.aceptacion.md](03-terms-pierde-formulario-en-error.aceptacion.md)
 - **Ubicación:** `frontend/app/admin/jobs/[id]/terms.tsx:71-72`, `:78-85`, `:131`, `:198`
 - **Aceptación:** [03-terms-pierde-formulario-en-error.aceptacion.md](03-terms-pierde-formulario-en-error.aceptacion.md)
 
