@@ -20,7 +20,9 @@ Ejecuta todo desde la raíz del repo (`traductor_libros/`).
 - Frontend cambiado: `cd frontend && npx tsc --noEmit`, `npm run lint` (0 errores), `npm run test` y
   `node ../handoff/check.mjs app lib` (0 problemas). El smoke test de navegador (`npm run test:e2e`) se ejecuta
   después de desplegar, con `E2E_USER_EMAIL`/`E2E_USER_PASSWORD` de una cuenta `user`.
-- Backend cambiado: `cd backend && python -m pytest -q` (o las pruebas afectadas).
+- Backend cambiado: `cd backend && .venv/bin/ruff check app tests` (`All checks passed!`) y
+  `.venv/bin/python -m pytest -q -m "not slow and not s3"` (todo en verde; incluye `test_alembic_check`, que
+  falla si los modelos y las migraciones divergen). No hay `python` de sistema: usa el de `.venv`.
 
 Si algo falla, corrige antes de desplegar.
 

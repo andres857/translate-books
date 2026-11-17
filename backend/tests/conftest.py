@@ -1,5 +1,6 @@
 import os
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 import pymupdf
@@ -134,3 +135,36 @@ def auth_client(app, role: str = "admin", *, user=None, reauth: bool = False):
 
 def admin_client(app):
     return auth_client(app, "admin")
+
+
+# ---- número de queries: para fijar en un test que un endpoint no hace N+1
+
+class QueryCounter:
+    def __init__(self):
+        self.statements: list[str] = []
+
+    @property
+    def count(self) -> int:
+        return len(self.statements)
+
+
+@contextmanager
+def count_queries(engine=None):
+    """Cuenta las sentencias SQL ejecutadas dentro del bloque (por defecto en el engine de la app).
+
+    `with count_queries() as q: client.get(...)` y luego `q.count` / `q.statements`.
+    """
+    from sqlalchemy import event
+
+    if engine is None:
+        from app.db.session import engine
+    q = QueryCounter()
+
+    def _record(conn, cursor, statement, parameters, context, executemany):
+        q.statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", _record)
+    try:
+        yield q
+    finally:
+        event.remove(engine, "before_cursor_execute", _record)
