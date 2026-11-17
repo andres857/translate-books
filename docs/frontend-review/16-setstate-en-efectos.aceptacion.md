@@ -6,7 +6,7 @@ Ficha: [16-setstate-en-efectos.md](16-setstate-en-efectos.md). Marca cada casill
 
 - [ ] `frontend/eslint.config.mjs` ya no rebaja `react-hooks/set-state-in-effect` (la regla vuelve a su valor de `eslint-config-next`) y `npm run lint` termina con 0 errores.
 - [ ] `npm run lint` no muestra avisos `react-hooks/set-state-in-effect` (`npx eslint . -f json` → 0 mensajes de esa regla).
-- [ ] No aumenta el número de `eslint-disable` (`grep -rc eslint-disable frontend/app frontend/lib`, total ≤ 9) ni se añade ninguno para esta regla.
+- [ ] No aumenta el número de `eslint-disable` (`grep -rc eslint-disable frontend/app frontend/lib`, total ≤ 12, la cifra tras el #14) ni se añade ninguno para esta regla.
 - [ ] Con red lenta (DevTools › Slow 3G), al cambiar de página en «Libro» no se ven un instante los bloques de la página anterior.
 - [ ] La vista «Libro» recuerda la elección Original/Comparar/Traducción tras recargar, y el Playground el tamaño de miniaturas, sin aviso de hidratación en la consola.
 

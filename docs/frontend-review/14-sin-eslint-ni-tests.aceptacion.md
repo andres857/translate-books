@@ -7,7 +7,7 @@ Ficha: [14-sin-eslint-ni-tests.md](14-sin-eslint-ni-tests.md). Marca cada casill
 - [x] `cd frontend && npm run lint` termina con 0 errores.
   - Verificado: `npm run lint` → `✖ 20 problems (0 errors, 20 warnings)`, código de salida 0. Los 20 avisos son `react-hooks/set-state-in-effect`, rebajada a aviso y registrada como ficha #16.
 - [x] Cada `eslint-disable` que queda tiene un motivo escrito en la misma línea (`grep -rn 'eslint-disable' frontend/app frontend/lib` sin líneas sin `--`).
-  - Verificado: `grep -rn eslint-disable frontend/app frontend/lib | grep -v -- "-- "` → sin salida (9 directivas, todas con motivo; se quitó 1 que ya no hacía falta).
+  - Verificado: `grep -rn eslint-disable frontend/app frontend/lib | grep -v -- "-- "` → sin salida: 12 directivas, todas con motivo (había 11; se añadieron 2 para las `<img>` de scope-view, que no tenían, y se quitó 1 que ya no hacía falta). Corregido: una primera versión de esta nota decía 9.
 - [x] `npm run test` ejecuta las pruebas unitarias de `safeNext` y `routeFor` en verde.
   - Verificado: `npm run test` → `Tests 17 passed (17)`: tests/unit/redirect.test.ts (13) y tests/unit/route-for.test.ts (4).
 - [x] `npx playwright test` ejecuta el smoke test (login → subir PDF con `FAKE_TRANSLATOR` → progreso → logout) en verde contra `docker compose`.
