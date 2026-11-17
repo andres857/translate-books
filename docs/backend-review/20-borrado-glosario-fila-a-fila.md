@@ -30,3 +30,13 @@ la columna `pdf` (`select(PlaygroundAttempt.pdf)`) y borrar con un `delete()` po
 ## Notas
 
 Detectado al cerrar #09 (fuera de su alcance: la ficha y su criterio solo cubren páginas y bloques).
+
+- Decisión: `delete(...)` en bloque recogiendo antes solo las rutas (`select(PlaygroundRun.id)` para las carpetas
+  `run_<id>` y `select(PlaygroundAttempt.pdf)` para los PDF), en el mismo orden de rutas que antes; los archivos se
+  siguen borrando después del commit (`jobs_service.delete_job_and_files`). Qué se borra no cambia.
+- Decisión: las evaluaciones (`PlaygroundRun`) también pasan a un `delete()` por `job_id`, porque el bucle
+  `s.delete(r)` era el mismo patrón fila a fila en la misma función y ya solo hacía falta su id. Orden en la BD:
+  intentos → evaluaciones → trabajo (RESTRICT de #09) → glosario y términos → documento.
+- `count_queries` cuenta un executemany como una sentencia, así que el ORM ya agrupaba los DELETE por id: el test
+  comprueba también que esas tablas solo aparecen en un DELETE por `document_id`/`job_id`.
+- Sin cambios en el contrato de la API: el frontend no necesita ajuste.

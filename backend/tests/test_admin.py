@@ -497,6 +497,62 @@ def test_delete_job_queries_do_not_grow_with_segments(client, sample_pdf):
     assert _rows_of(small) == _rows_of(big) == (0, 0)
 
 
+def test_delete_job_queries_do_not_grow_with_glossary_or_attempts(client, sample_pdf):
+    """#20: glosario, términos e intentos se borran con un DELETE en bloque, no fila a fila."""
+    from sqlalchemy import func, select
+
+    from app import playground as pg
+    from app.db.models import GlossaryEntry, Job, PlaygroundAttempt, PlaygroundRun, ProtectedTerm
+    from app.db.session import SessionLocal
+
+    from .conftest import count_queries
+
+    def prepare(job_id: int, entries: int, attempts: int) -> tuple[int, list]:
+        with SessionLocal() as s:
+            doc_id = s.get(Job, job_id).document_id
+            for i in range(entries):
+                s.add(GlossaryEntry(source=f"term{i}", target=f"término{i}", document_id=doc_id))
+                s.add(ProtectedTerm(term=f"Name{i}", document_id=doc_id))
+            run = PlaygroundRun(job_id=job_id, task="translate", pages="1", variants=[], status="done", results=[])
+            s.add(run)
+            s.flush()
+            pdfs = []
+            for i in range(attempts):
+                pdf = pg.attempts_dir(run.id) / f"{i}.pdf"
+                pdf.parent.mkdir(parents=True, exist_ok=True)
+                pdf.write_bytes(b"%PDF-1.4")
+                pdfs.append(pdf)
+                s.add(PlaygroundAttempt(run_id=run.id, job_id=job_id, label="A", kind="try", pages="1", pdf=str(pdf)))
+            s.commit()
+            return doc_id, pdfs
+
+    def leftovers(job_id: int, doc_id: int) -> tuple[int, int, int, int]:
+        with SessionLocal() as s:
+            return tuple(s.scalar(select(func.count()).select_from(m).where(cond)) for m, cond in (
+                (GlossaryEntry, GlossaryEntry.document_id == doc_id),
+                (ProtectedTerm, ProtectedTerm.document_id == doc_id),
+                (PlaygroundAttempt, PlaygroundAttempt.job_id == job_id),
+                (PlaygroundRun, PlaygroundRun.job_id == job_id)))
+
+    small, big = _processed_job(client, sample_pdf), _processed_job(client, sample_pdf)
+    small_doc, small_pdfs = prepare(small, entries=1, attempts=0)
+    big_doc, big_pdfs = prepare(big, entries=50, attempts=5)
+    assert leftovers(big, big_doc) == (50, 50, 5, 1) and all(p.exists() for p in big_pdfs)
+
+    with count_queries() as q_small:
+        assert client.delete(f"/api/jobs/{small}").status_code == 200
+    with count_queries() as q_big:
+        assert client.delete(f"/api/jobs/{big}").status_code == 200
+    assert q_big.count == q_small.count, q_big.statements
+    # ni SELECT de filas ni DELETE por id (el ORM los agrupa en un executemany que count_queries cuenta como uno)
+    flat = [" ".join(st.split()) for st in q_big.statements]
+    for table, col in (("glossary", "document_id"), ("protected_terms", "document_id"), ("playground_attempts", "job_id")):
+        assert [st for st in flat if f" {table}" in st and not st.startswith(f"SELECT {table}.pdf ")] == [
+            f"DELETE FROM {table} WHERE {table}.{col} = ?"], flat
+    assert leftovers(small, small_doc) == leftovers(big, big_doc) == (0, 0, 0, 0)
+    assert not small_pdfs and not any(p.exists() for p in big_pdfs)
+
+
 def test_protected_term_category_must_be_known(client):
     """#11: la categoría es una de las que pinta la vista de términos (en mayúsculas o minúsculas)."""
     bad = client.post("/api/protected-terms", json={"term": "Sol", "category": "cualquier-cosa-larguísima"})

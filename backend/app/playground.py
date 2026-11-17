@@ -14,7 +14,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pymupdf
-from sqlalchemy import func, select, text, update
+from sqlalchemy import delete, func, select, text, update
 
 from app import runtime_settings
 from app.config import get_settings
@@ -521,22 +521,18 @@ def delete_job(s, job: Job) -> list[Path]:
     y el trabajo; y el documento si no le queda otro análisis. Devuelve las rutas en disco que hay que borrar."""
     paths: list[Path] = [get_settings().outputs_dir / f"job_{job.id}"]
     paths += [Path(p) for p in (job.output_path, job.report_path) if p]
-    runs = s.scalars(select(PlaygroundRun).where(PlaygroundRun.job_id == job.id)).all()
-    paths += [run_dir(r.id) for r in runs]
-    for a in s.scalars(select(PlaygroundAttempt).where(PlaygroundAttempt.job_id == job.id)):
-        if a.pdf:
-            paths.append(Path(a.pdf))
-        s.delete(a)
-    s.flush()
-    for r in runs:
-        s.delete(r)
+    # en bloque (#20): solo se leen las columnas con rutas; intentos y evaluaciones antes del trabajo (RESTRICT)
+    paths += [run_dir(rid) for rid in s.scalars(select(PlaygroundRun.id).where(PlaygroundRun.job_id == job.id))]
+    paths += [Path(p) for p in s.scalars(select(PlaygroundAttempt.pdf).where(
+        PlaygroundAttempt.job_id == job.id, PlaygroundAttempt.pdf.is_not(None))) if p]
+    s.execute(delete(PlaygroundAttempt).where(PlaygroundAttempt.job_id == job.id))
+    s.execute(delete(PlaygroundRun).where(PlaygroundRun.job_id == job.id))
     doc = job.document
     s.delete(job)  # páginas y bloques caen en cascada
     s.flush()
     if doc is not None and not s.scalar(select(func.count(Job.id)).where(Job.document_id == doc.id)):
         for model in (GlossaryEntry, ProtectedTerm):
-            for row in s.scalars(select(model).where(model.document_id == doc.id)):
-                s.delete(row)
+            s.execute(delete(model).where(model.document_id == doc.id))
         shared = s.scalar(select(func.count(Document.id)).where(Document.sha256 == doc.sha256, Document.id != doc.id))
         if not shared and doc.path:
             paths.append(Path(doc.path).parent)  # carpeta uploads/<sha>
