@@ -51,6 +51,12 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
   const [missing, setMissing] = useState(false); // 404/403: no existe o no es de este usuario
   const [azw3, setAzw3] = useState(true);
 
+  // el título de la pestaña lleva el nombre del libro (la metadata del segmento solo dice «Libro»)
+  const bookTitle = job ? job.title_es || job.original_name.replace(/\.pdf$/i, "") : null;
+  useEffect(() => {
+    if (bookTitle) document.title = `${bookTitle} · AstroBooks`;
+  }, [bookTitle]);
+
   useEffect(() => {
     getHealth().then((h) => setAzw3(h.azw3_available)).catch(() => undefined);
   }, []);

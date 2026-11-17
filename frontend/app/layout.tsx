@@ -9,7 +9,8 @@ import "./globals.css";
 const font = Inter({ subsets: ["latin"], display: "swap" });
 
 export const metadata: Metadata = {
-  title: "AstroBooks · Traductor de libros",
+  // cada segmento pone su título («Usuarios» → «Usuarios · AstroBooks»); la portada es la lista de libros
+  title: { default: "Libros · AstroBooks", template: "%s · AstroBooks" },
   description: "Traduce libros PDF del inglés al español conservando su diseño",
 };
 

@@ -30,6 +30,12 @@ export default function AdminJobPage({ params }: { params: Promise<{ id: string 
   const [downloads, setDownloads] = useState(false);
   const downloadRef = useRef<HTMLDivElement>(null);
 
+  // título de la pestaña con el nombre del libro (la metadata del segmento solo dice «Revisión del libro»)
+  const bookTitle = data?.book.title;
+  useEffect(() => {
+    if (bookTitle) document.title = `${bookTitle} · Revisión · AstroBooks`;
+  }, [bookTitle]);
+
   // el menú de formatos se cierra al hacer clic fuera o con Escape
   useEffect(() => {
     if (!downloads) return;
