@@ -22,11 +22,20 @@ export function apiHeaders(method: string): Record<string, string> {
   return h;
 }
 
-/** fetch hacia /api/* con la cookie de sesión, el encabezado de la aplicación y el CSRF. */
-export function apiFetch(url: string, init: RequestInit = {}): Promise<Response> {
+/** Mensaje cuando el navegador no llega al servidor (fetch rechaza con un TypeError cuyo mensaje está en inglés). */
+export const OFFLINE = "No hay conexión con el servidor. Comprueba que el servicio esté en marcha e inténtalo de nuevo.";
+
+/** fetch hacia /api/* con la cookie de sesión, el encabezado de la aplicación y el CSRF. Un fallo de red se
+ *  convierte en ApiError (estado 0, código NETWORK) con un mensaje en español; una cancelación se respeta. */
+export async function apiFetch(url: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers);
   for (const [k, v] of Object.entries(apiHeaders(init.method ?? "GET"))) headers.set(k, v);
-  return fetch(url, { ...init, headers, credentials: "same-origin" });
+  try {
+    return await fetch(url, { ...init, headers, credentials: "same-origin" });
+  } catch (e) {
+    if ((e as Error)?.name === "AbortError") throw e;
+    throw new ApiError(OFFLINE, 0, "NETWORK");
+  }
 }
 
 /** Error de la API con su código (`REAUTH_REQUIRED`, `LAST_ADMIN`…) además del mensaje. */
