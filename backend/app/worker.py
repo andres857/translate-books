@@ -164,8 +164,9 @@ def process(job_id: int) -> None:
             return
         log.info("Trabajo %s: modo de traducción %s (%s)", job_id, rs.provider, translator.model)
         out_dir = st.outputs_dir / f"job_{job.id}"
-        result = run_pipeline(Path(doc.path), out_dir, translator, SqlCache(SessionLocal()), terms, glossary,
-                              opts, progress, should_stop)
+        with SessionLocal() as cache_s:
+            result = run_pipeline(Path(doc.path), out_dir, translator, SqlCache(cache_s), terms, glossary,
+                                  opts, progress, should_stop)
         save_results(s, job, result.pages)
         if opts.discover_glossary:  # solo si se descubrió en esta pasada (si no, se borraría el revisado)
             save_auto(s, doc, result.domain, result.glossary_auto)
@@ -202,9 +203,10 @@ def process_recompose(s, job: Job, options: dict, translator, terms, glossary, o
                 select(Segment).join(Page).where(Page.job_id == job.id, Page.number == n, Segment.edited.is_(True)))
                 if sg.translation}
             log.info("Trabajo %s: recomponiendo la página %s (%s bloque(s) editados)", job.id, n, len(overrides))
-            info = recompose_page(Path(job.document.path), Path(job.output_path),
-                                  Path(job.report_path) if job.report_path else None, n, translator,
-                                  SqlCache(SessionLocal()), terms, glossary, overrides, opts, progress, should_stop)
+            with SessionLocal() as cache_s:
+                info = recompose_page(Path(job.document.path), Path(job.output_path),
+                                      Path(job.report_path) if job.report_path else None, n, translator,
+                                      SqlCache(cache_s), terms, glossary, overrides, opts, progress, should_stop)
             save_results(s, job, [info], only={n})
         options.pop("recompose_error", None)
     except Cancelled:
@@ -260,9 +262,10 @@ def process_digitize(s, job: Job, rs, options: dict, progress, should_stop) -> N
     opts = DigitizeOptions(lang=options.get("ocr_lang", "en"), correct=bool(translator),
                            concurrency=rs.concurrency, batch_chars=st.translation_batch_chars,
                            batch_items=st.translation_batch_max_segments)
-    result = run_digitize(Path(job.document.path), st.outputs_dir / f"job_{job.id}", opts, translator,
-                          SqlCache(SessionLocal()), progress, should_stop, display_name=job.document.original_name,
-                          fonts_dirs=st.fonts_dirs)
+    with SessionLocal() as cache_s:
+        result = run_digitize(Path(job.document.path), st.outputs_dir / f"job_{job.id}", opts, translator,
+                              SqlCache(cache_s), progress, should_stop, display_name=job.document.original_name,
+                              fonts_dirs=st.fonts_dirs)
     save_results(s, job, result.pages)
     job.document.title = result.title
     options["ocr_pages"] = result.report["estadisticas"]["paginas_ocr_lista"]

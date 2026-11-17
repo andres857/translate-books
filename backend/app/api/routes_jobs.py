@@ -133,12 +133,13 @@ def _create_job_from_bytes(db: Session, data: bytes, filename: str, rights_confi
     if not data.startswith(b"%PDF"):
         raise HTTPException(400, "El archivo no es un PDF válido.")
     try:
-        pdf = pymupdf.open(stream=data, filetype="pdf")
+        with pymupdf.open(stream=data, filetype="pdf") as pdf:
+            encrypted, page_count = pdf.is_encrypted or pdf.needs_pass, len(pdf)
     except Exception:
         raise HTTPException(400, "No pudimos abrir el PDF. Puede estar dañado.")
-    if pdf.is_encrypted or pdf.needs_pass:
+    if encrypted:
         raise HTTPException(400, "El PDF está protegido con contraseña. Sube una versión sin protección.")
-    if len(pdf) == 0:
+    if page_count == 0:
         raise HTTPException(400, "El PDF no tiene páginas.")
 
     sha = hashlib.sha256(data).hexdigest()
@@ -147,7 +148,7 @@ def _create_job_from_bytes(db: Session, data: bytes, filename: str, rights_confi
     path = folder / "original.pdf"
     if not path.exists():
         path.write_bytes(data)
-    doc = Document(original_name=filename or "libro.pdf", path=str(path), sha256=sha, page_count=len(pdf))
+    doc = Document(original_name=filename or "libro.pdf", path=str(path), sha256=sha, page_count=page_count)
     db.add(doc)
     db.flush()
     options = ({"mode": "digitize", "ocr_lang": ocr_lang, "correct": bool(correct_ocr)} if mode == "digitize"
@@ -396,10 +397,10 @@ def preview(job_id: int, number: int, version: str = "translated", dpi: int = 80
     path = job.document.path if version == "original" else job.output_path
     if not path or not Path(path).exists():
         raise HTTPException(409, "La vista previa todavía no está disponible.")
-    pdf = pymupdf.open(path)
-    if not 1 <= number <= len(pdf):
-        raise HTTPException(404, "Esa página no existe.")
-    png = pdf[number - 1].get_pixmap(dpi=max(30, min(dpi, 200))).tobytes("png")
+    with pymupdf.open(path) as pdf:
+        if not 1 <= number <= len(pdf):
+            raise HTTPException(404, "Esa página no existe.")
+        png = pdf[number - 1].get_pixmap(dpi=max(30, min(dpi, 200))).tobytes("png")
     return Response(png, media_type="image/png")
 
 

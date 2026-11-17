@@ -80,6 +80,46 @@ def test_upload_process_download(client, sample_pdf):
     (OUT / "api_download.pdf").write_bytes(pdf.content)
 
 
+# ---- #12: los PDF de la API y las sesiones de la caché del worker se cierran
+
+def test_worker_and_preview_close_resources(client, sample_pdf, monkeypatch):
+    import gc
+
+    import pymupdf
+
+    from app import worker
+    from app.db.session import engine
+
+    r = client.post("/api/jobs", files={"file": ("sample.pdf", sample_pdf.read_bytes(), "application/pdf")},
+                    data={"rights_confirmed": "true"})
+    assert r.status_code == 200, r.text
+    job_id = r.json()["id"]
+    assert worker.claim_job() == job_id
+    gc.disable()  # sin el recolector, una sesión sin cerrar seguiría con su conexión prestada
+    try:
+        before = engine.pool.checkedout()
+        worker.process(job_id)
+        assert engine.pool.checkedout() == before
+    finally:
+        gc.enable()
+    assert client.get(f"/api/jobs/{job_id}").json()["status"] == "done"
+
+    opened = []
+    real_open = pymupdf.open
+
+    def spy(*a, **kw):
+        opened.append(real_open(*a, **kw))
+        return opened[-1]
+
+    monkeypatch.setattr(pymupdf, "open", spy)
+    assert client.get(f"/api/jobs/{job_id}/pages/1/preview").status_code == 200
+    assert client.get(f"/api/jobs/{job_id}/pages/999/preview?version=original").status_code == 404
+    r = client.post("/api/jobs", files={"file": ("sample.pdf", sample_pdf.read_bytes(), "application/pdf")},
+                    data={"rights_confirmed": "true"})
+    assert r.status_code == 200, r.text
+    assert len(opened) == 3 and all(d.is_closed for d in opened)
+
+
 # ---- #04: el estado de un trabajo no carga todas sus páginas y el listado no hace N+1
 
 def _job_with_pages(owner_id: int, reviews: dict[int, list[str]], n_pages: int = 6) -> int:
