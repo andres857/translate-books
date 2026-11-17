@@ -40,7 +40,9 @@ line-length = 120
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B"]
+# BLE: un `except Exception` que no registra ni relanza necesita `# noqa: BLE001` con su motivo; RUF100 avisa
+# de los `noqa` que sobran (docs/backend-review/19-avisos-ruff-pendientes.md).
+select = ["E", "F", "I", "B", "BLE", "RUF100"]
 # Excluidas por estilo (motivo en docs/backend-review/15-sin-lint-ni-checks.md): E501 (42 líneas > 120, sobre todo
 # prompts y f-strings largas), E741 (variables `l`) y E731 (lambdas asignadas).
 ignore = ["E501", "E741", "E731"]

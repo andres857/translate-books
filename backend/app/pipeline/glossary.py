@@ -259,7 +259,7 @@ def discover_glossary(candidates: list[Candidate], title: str, translator, concu
     def run(batch: list[Candidate]) -> dict:
         try:
             return extract({"book_title": title, "candidates": [c.to_payload() for c in batch]}) or {}
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             if type(e).__name__ == "FatalAPIError":
                 raise
             log.warning("Descubrimiento de glosario: un lote falló: %s", e)

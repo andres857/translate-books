@@ -533,11 +533,11 @@ def _layout_pictures(page: pymupdf.Page) -> list[pymupdf.Rect]:
     """Zonas que el modelo de layout de PyMuPDF (CPU, ~0,25 s/página) ve como ilustración. El texto que cae
     dentro es de una infografía o ficha: el traductor lo recibe con el texto de toda la página como contexto."""
     try:
-        import pymupdf.layout  # noqa: F401  (activa el modelo)
+        import pymupdf.layout  # activa el modelo
 
         page.get_layout()
         boxes = getattr(page, "layout_information", None) or []
-    except Exception:  # noqa: BLE001  el layout es una ayuda: sin él la página se analiza igual
+    except Exception:  # el layout es una ayuda: sin él la página se analiza igual
         log.warning("Layout no disponible en la página %s", page.number + 1, exc_info=True)
         return []
     return [pymupdf.Rect(b[:4]) for b in boxes if len(b) >= 5 and b[4] == "picture"]

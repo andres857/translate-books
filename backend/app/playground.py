@@ -324,7 +324,7 @@ class _Recorder:
     def _wrap(self, fn, *args):
         try:
             return fn(*args)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             self.last_error = str(e)[:300] or type(e).__name__
             raise
 
@@ -398,7 +398,7 @@ def run_variant(v: dict, task: str, rows, ctx: dict, should_stop, on_progress, c
     except FatalAPIError as e:
         result["error"] = friendly_error(e)
         result["fatal"] = "balance" if is_out_of_balance(e) else "fatal"
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         log.exception("Playground: variante %s falló", v["label"])
         result["error"] = str(e)[:300] or type(e).__name__
     if rec is not None and hasattr(rec.inner, "meter") and rec.inner.meter is not None:
@@ -498,7 +498,7 @@ def compose_result(s, run: PlaygroundRun, job: Job, res: dict, pages: list[int],
         info = compose_variant(s, job, r["segments"], only if splice else pages, target, splice, should_stop)
     except Cancelled:
         raise
-    except Exception:  # noqa: BLE001
+    except Exception:
         log.exception("Playground %s: no se pudo componer la variante %s", run.id, r["label"])
         r["compose_error"] = "No se pudo maquetar el PDF de esta variante; el texto sí está evaluado."
         return r
@@ -592,7 +592,7 @@ def record_attempt(s, run: PlaygroundRun, v: dict, res: dict, pages: list[int], 
             a.pdf = str(dest)
         s.commit()
         return a
-    except Exception:  # noqa: BLE001
+    except Exception:
         log.exception("Playground %s: no se pudo guardar el intento de %s", run.id, v.get("label"))
         s.rollback()
         return None
@@ -699,7 +699,7 @@ def execute(run_id: int) -> None:
     except Cancelled:
         s.rollback()
         log.info("Playground %s cancelado", run_id)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         s.rollback()
         if not isinstance(e, FatalAPIError):
             log.exception("Playground %s falló", run_id)

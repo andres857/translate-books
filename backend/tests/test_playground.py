@@ -486,7 +486,7 @@ def test_prepare_generates_glossary_and_tolerates_failure(db, book, monkeypatch)
             return {"domain": "astrología", "terms": [{"source": "co-rules", "target": "Corregente de"}]}
 
     stages = []
-    progress = lambda st, d, t, p: stages.append(st)  # noqa: E731
+    progress = lambda st, d, t, p: stages.append(st)
     with db() as s:
         job = s.get(Job, book)
         monkeypatch.setattr(rsmod, "make_translator", lambda rs, prompts=None: Terminologist())

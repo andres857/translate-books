@@ -177,13 +177,13 @@ def process(job_id: int) -> None:
         log.info("Trabajo %s terminado: %s", job.id, result.output_pdf)
         try:  # EPUB para Kindle; si falla, el PDF sigue disponible y el EPUB se genera al descargarlo
             log.info("EPUB listo: %s", build_epub_for_job(s, job))
-        except Exception:  # noqa: BLE001
+        except Exception:
             log.exception("No se pudo generar el EPUB del trabajo %s", job.id)
     except Cancelled:
         s.rollback()
         job = s.get(Job, job_id)
         log.info("Trabajo %s detenido (%s)", job_id, job.status)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         log.exception("Trabajo %s falló", job_id)
         s.rollback()
         close_job(s, job_id, status="failed", error=friendly_error(e))
@@ -211,7 +211,7 @@ def process_recompose(s, job: Job, options: dict, translator, terms, glossary, o
         options.pop("recompose_error", None)
     except Cancelled:
         raise
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         log.exception("Trabajo %s: no se pudo recomponer", job.id)
         s.rollback()
         options["recompose_error"] = ("No se pudo recomponer la página. " + friendly_error(e)
@@ -248,7 +248,7 @@ def prepare_glossary(s, job: Job, rs, terms, book, opts, progress) -> None:
         n = save_auto(s, job.document, domain, proposals)
         s.commit()
         log.info("Trabajo %s: glosario con %s términos (%s)", job.id, n, domain or "sin especialidad")
-    except Exception:  # noqa: BLE001
+    except Exception:
         s.rollback()
         log.exception("Trabajo %s: no se pudo generar el glosario al preparar", job.id)
 
@@ -276,7 +276,7 @@ def process_digitize(s, job: Job, rs, options: dict, progress, should_stop) -> N
     log.info("Trabajo %s digitalizado: %s", job.id, result.output_pdf)
     try:
         log.info("EPUB listo: %s", build_epub_for_job(s, job))
-    except Exception:  # noqa: BLE001
+    except Exception:
         log.exception("No se pudo generar el EPUB del trabajo %s", job.id)
 
 

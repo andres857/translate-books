@@ -121,7 +121,7 @@ def _create_job_from_bytes(db: Session, data: bytes, filename: str, rights_confi
     try:
         with pymupdf.open(stream=data, filetype="pdf") as pdf:
             encrypted, page_count = pdf.is_encrypted or pdf.needs_pass, len(pdf)
-    except Exception:
+    except Exception:  # noqa: BLE001  cualquier fallo de PyMuPDF al abrir significa PDF dañado
         raise HTTPException(400, "No pudimos abrir el PDF. Puede estar dañado.") from None
     if encrypted:
         raise HTTPException(400, "El PDF está protegido con contraseña. Sube una versión sin protección.")
@@ -312,7 +312,7 @@ def _epub_for(db: Session, job: Job) -> Path:
         if not path.exists() or path.stat().st_mtime < Path(job.output_path).stat().st_mtime:
             try:
                 build_epub_for_job(db, job)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 raise HTTPException(500, "No se pudo generar el EPUB de este libro.") from e
     return path
 
@@ -330,7 +330,7 @@ def _azw3_for(db: Session, job: Job) -> Path:
                 build_azw3(epub, path)
             except Azw3Unavailable as e:
                 raise HTTPException(409, str(e)) from e
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 raise HTTPException(500, "No se pudo generar el AZW3 de este libro.") from e
     return path
 

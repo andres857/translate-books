@@ -117,7 +117,7 @@ def _discover(doc_id: int) -> None:
         _set(doc_id, status="done", count=n, domain=domain, cost_usd=usage.get("cost_usd"),
              tokens_in=usage.get("tokens_in"), tokens_out=usage.get("tokens_out"))
         log.info("Glosario del libro %s: %s términos (%s)", doc_id, n, domain)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         log.exception("Descubrimiento de glosario del libro %s falló", doc_id)
         msg = ("Primero analiza o traduce el libro: no hay bloques guardados." if "NO_SEGMENTS" in str(e)
                else friendly_error(e))
