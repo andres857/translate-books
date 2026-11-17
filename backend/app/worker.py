@@ -84,10 +84,10 @@ def close_job(s, job_id: int, **values) -> bool:
 
 def save_results(s, job: Job, pages, only: set[int] | None = None) -> None:
     """Guarda páginas y segmentos. only: sustituir solo esas páginas (recomposición)."""
-    old = s.query(Page).filter(Page.job_id == job.id)
+    old = select(Page).where(Page.job_id == job.id)
     if only is not None:
-        old = old.filter(Page.number.in_(only))
-    for row in old.all():  # por el ORM, para que se borren también sus segmentos
+        old = old.where(Page.number.in_(only))
+    for row in s.scalars(old).all():  # por el ORM, para que se borren también sus segmentos
         s.delete(row)
     s.flush()
     for info in pages:

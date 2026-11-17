@@ -235,10 +235,10 @@ def create_job_from_upload(body: FromUploadIn, storage: StoragePort = Depends(ge
 
 @router.get("", response_model=list[JobRead])
 def list_jobs(db: Session = Depends(get_db), p: Principal = Depends(require_user)):
-    q = db.query(Job).options(joinedload(Job.document))
+    q = select(Job).options(joinedload(Job.document))
     if not p.is_admin:
-        q = q.filter(Job.owner_id == p.user.id)
-    jobs = q.order_by(Job.id.desc()).limit(50).all()
+        q = q.where(Job.owner_id == p.user.id)
+    jobs = db.scalars(q.order_by(Job.id.desc()).limit(50)).all()
     review = _review_pages(db, [j.id for j in jobs])
     return [job_status(j, review[j.id]) for j in jobs]
 
@@ -380,6 +380,6 @@ def preview(job_id: int, number: int, version: Literal["original", "translated"]
 @router.get("/{job_id}/pages", response_model=list[PageRead])
 def pages(job_id: int, db: Session = Depends(get_db), p: Principal = Depends(require_user)):
     get_visible_job(db, job_id, p)
-    rows = db.query(Page).filter(Page.job_id == job_id).order_by(Page.number)
+    rows = db.scalars(select(Page).where(Page.job_id == job_id).order_by(Page.number))
     return [{"number": p.number, "kind": p.kind, "needs_review": p.needs_review, "reasons": p.review_reasons}
             for p in rows]

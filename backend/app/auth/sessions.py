@@ -12,7 +12,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Request, Response
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -98,7 +98,7 @@ def create(db: Session, user: User, kind: str, request: Request) -> tuple[AuthSe
 
 
 def find(db: Session, token: str) -> AuthSession | None:
-    s = db.query(AuthSession).filter(AuthSession.token_hash == sha256(token)).one_or_none()
+    s = db.scalars(select(AuthSession).where(AuthSession.token_hash == sha256(token))).one_or_none()
     if not is_valid(s):
         return None
     t = now()

@@ -165,11 +165,13 @@ def cmd_auth_recover(args) -> None:
 
 
 def cmd_active_jobs(_args) -> None:
+    from sqlalchemy import select
+
     from app.db.models import Job
     from app.db.session import SessionLocal
 
     with SessionLocal() as db:
-        rows = db.query(Job).filter(Job.status.in_(("queued", "running", "paused"))).all()
+        rows = db.scalars(select(Job).where(Job.status.in_(("queued", "running", "paused")))).all()
         print("\n".join(f"{j.id} {j.status} {j.stage}" for j in rows) or "sin trabajos activos")
 
 

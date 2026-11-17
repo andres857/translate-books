@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from urllib.parse import quote
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import StoredFile
@@ -83,7 +84,7 @@ class FilesService:
         if not key.startswith(f"{FOLDER}/") or ".." in key:
             raise FileValidationError("Clave no válida.")
         self._check(content_type, size)
-        if self.db.query(StoredFile).filter_by(key=key).first():
+        if self.db.scalars(select(StoredFile).where(StoredFile.key == key).limit(1)).first():
             raise FileValidationError("Ese archivo ya está registrado.", 409)
         meta = self.storage.get_metadata(key)
         if meta is None:

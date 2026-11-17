@@ -2,6 +2,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -63,11 +64,11 @@ def _commit_new(db: Session) -> None:
 @router.get("/protected-terms")
 def list_terms(document_id: int | None = None, db: Session = Depends(get_db)):
     """Sin document_id: todos. Con document_id: los globales y los de ese libro."""
-    q = db.query(ProtectedTerm)
+    q = select(ProtectedTerm)
     if document_id is not None:
-        q = q.filter((ProtectedTerm.document_id.is_(None)) | (ProtectedTerm.document_id == document_id))
+        q = q.where((ProtectedTerm.document_id.is_(None)) | (ProtectedTerm.document_id == document_id))
     return [{"id": t.id, "term": t.term, "category": t.category, "origin": t.origin, "document_id": t.document_id}
-            for t in q.order_by(ProtectedTerm.term)]
+            for t in db.scalars(q.order_by(ProtectedTerm.term))]
 
 
 @router.post("/protected-terms")
@@ -92,10 +93,10 @@ def delete_term(term_id: int, db: Session = Depends(get_db)):
 
 @router.get("/glossary")
 def list_glossary(document_id: int | None = None, db: Session = Depends(get_db)):
-    q = db.query(GlossaryEntry)
+    q = select(GlossaryEntry)
     if document_id is not None:
-        q = q.filter((GlossaryEntry.document_id.is_(None)) | (GlossaryEntry.document_id == document_id))
-    return [_glossary_row(g) for g in q.order_by(GlossaryEntry.source)]
+        q = q.where((GlossaryEntry.document_id.is_(None)) | (GlossaryEntry.document_id == document_id))
+    return [_glossary_row(g) for g in db.scalars(q.order_by(GlossaryEntry.source))]
 
 
 @router.post("/glossary")
