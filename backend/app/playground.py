@@ -187,6 +187,63 @@ def seconds_per_block(s) -> dict[tuple[str, str], float]:
     return {k: sec / n for k, (sec, n) in acc.items() if n}
 
 
+def book_chapters(s, job: Job) -> list[dict]:
+    """Capítulos del índice del PDF (marcadores, dos niveles) como rangos de páginas. Sin índice, se detectan por
+    los títulos."""
+    count = book_pages(s, job)
+    try:
+        with pymupdf.open(Path(job.document.path)) as doc:
+            toc = [(lvl, title.strip(), page) for lvl, title, page, *_ in doc.get_toc(simple=False) if page >= 1]
+    except Exception:  # noqa: BLE001
+        toc = []
+    toc = [t for t in toc if t[0] <= 2]
+    if not toc:
+        return detect_chapters(s, job)
+    out = []
+    for i, (lvl, title, start) in enumerate(toc):
+        nxt = next((p for lv, _, p in toc[i + 1:] if lv <= lvl and p > start), count + 1)
+        end = min(nxt - 1, count)
+        out.append({"title": title or f"Sección {i + 1}", "level": lvl, "pages": f"{start}-{max(start, end)}",
+                    "source": "toc"})
+    return out
+
+
+def _norm_title(text: str) -> str:
+    return re.sub(r"[^\w]+", " ", re.sub(r"<[^>]+>", "", text or "").lower()).strip()
+
+
+def translate_titles(s, job: Job, chapters: list[dict]) -> list[dict]:
+    """Añade «title_es» a cada capítulo: la traducción del encabezado que lo abre (mismo texto que el título del
+    índice, en su primera página o la siguiente). Sin coincidencia —o sin traducción— queda en None."""
+    starts = {int(c["pages"].split("-")[0]) for c in chapters}
+    near = starts | {n + 1 for n in starts}
+    rows = s.execute(select(Page.number, Segment.source_text, Segment.translation).join(Segment.page)
+                     .where(Page.job_id == job.id, Page.number.in_(near), Segment.translation.is_not(None))).all()
+    by_page: dict[int, list[tuple[str, str]]] = {}
+    for n, src, tr in rows:
+        text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", tr or "")).strip()
+        if text.endswith(".") and not text.endswith(".."):  # un título no lleva punto final
+            text = text[:-1].rstrip()
+        if text:
+            by_page.setdefault(n, []).append((_norm_title(src), text))
+
+    def find(title: str, start: int) -> str | None:
+        want = _norm_title(title)
+        if not want:
+            return None
+        for n in (start, start + 1):
+            for src, tr in by_page.get(n, []):
+                if src == want:
+                    return tr
+        for n in (start, start + 1):  # título del índice con añadidos («Aries 21 March–20 April» → «Aries»)
+            for src, tr in by_page.get(n, []):
+                if len(src) >= 3 and (want.startswith(src + " ") or src.startswith(want + " ")) and len(tr) <= 90:
+                    return tr
+        return None
+
+    return [{**c, "title_es": find(c["title"], int(c["pages"].split("-")[0]))} for c in chapters]
+
+
 def detect_chapters(s, job: Job) -> list[dict]:
     """Capítulos de un PDF sin índice: títulos grandes o «Chapter 3» al principio de la página, uno por página.
     Ignora las cabeceras repetidas en muchas páginas. Devuelve [] si no encuentra al menos dos."""

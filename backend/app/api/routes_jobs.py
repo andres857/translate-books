@@ -247,6 +247,29 @@ def cancel_job(job_id: int, db: Session = Depends(get_db)):
     return job_status(job)
 
 
+@router.delete("/{job_id}")
+def delete_job(job_id: int, db: Session = Depends(get_db)):
+    """Elimina un libro con todo lo suyo: páginas y bloques, evaluaciones del Playground, archivos generados y,
+    si el documento no tiene otro trabajo, el documento con su glosario, términos y PDF subido."""
+    from sqlalchemy import func, select
+
+    from app import playground as pg
+    from app.db.models import PlaygroundRun
+
+    job = _job_or_404(db, job_id)
+    if job.status in ("queued", "running"):
+        raise HTTPException(409, "El libro se está procesando: detenlo antes de eliminarlo.")
+    busy = db.scalar(select(func.count(PlaygroundRun.id)).where(
+        PlaygroundRun.job_id == job.id, PlaygroundRun.status.in_(("queued", "running"))))
+    if busy:
+        raise HTTPException(409, "Hay una evaluación del Playground en curso con este libro: espera o cancélala.")
+    removed = pg.delete_job(db, job)
+    db.commit()
+    for path in removed:  # después del commit: si la BD falla, los archivos siguen ahí
+        pg.remove_path(path)
+    return {"ok": True}
+
+
 @router.post("/{job_id}/resume")
 def resume_job(job_id: int, db: Session = Depends(get_db)):
     job = _job_or_404(db, job_id)

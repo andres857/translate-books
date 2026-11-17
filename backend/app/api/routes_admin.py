@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import playground as pg
 from app.api.routes_jobs import _job_or_404, job_status
 from app.db.models import Job, Page, Segment
 from app.db.session import get_db
@@ -34,6 +36,29 @@ def _segment(s: Segment) -> dict:
             "edited": bool(s.edited)}
 
 
+def book_info(job: Job) -> dict:
+    """Título, subtítulo y autor para la cabecera. El título traducido suele venir como «Título - Subtítulo».
+    El autor sale del nombre del archivo («… (Carole Taylor).pdf»); si no, de los metadatos del PDF."""
+    doc = job.document
+    full = doc.title_es or doc.title or re.sub(r"\.pdf$", "", doc.original_name, flags=re.I)
+    title, _, subtitle = full.partition(" - ")
+    author = None
+    for group in re.findall(r"\(([^()]+)\)", doc.original_name):
+        g = group.strip()
+        if g and not re.search(r"[\d.@]|lib", g, re.I) and len(g) <= 80:
+            author = g
+            break
+    if author is None:
+        try:
+            import pymupdf
+            with pymupdf.open(Path(doc.path)) as pdf:
+                author = (pdf.metadata or {}).get("author") or None
+        except Exception:  # noqa: BLE001
+            author = None
+    return {"title": title.strip(), "subtitle": subtitle.strip() or None, "author": author,
+            "source_lang": "EN", "target_lang": "ES"}
+
+
 @router.get("/jobs/{job_id}/summary")
 def summary(job_id: int, db: Session = Depends(get_db)):
     job = _job_or_404(db, job_id)
@@ -49,6 +74,7 @@ def summary(job_id: int, db: Session = Depends(get_db)):
     review = sum(1 for p in pages if p["needs_review"])
     return {
         "job": job_status(job),
+        "book": book_info(job),
         "totals": {"pages": len(pages) or job.document.page_count, "ok": len(pages) - review, "review": review,
                    "by_kind": dict(Counter(p["kind"] for p in pages)),
                    "segments": sum(p["segments"] for p in pages), "edited": sum(p["edited"] for p in pages)},
@@ -74,6 +100,13 @@ def page_segments(job_id: int, number: int, db: Session = Depends(get_db)):
     return {"number": page.number, "width": page.width, "height": page.height, "kind": page.kind,
             "needs_review": page.needs_review, "reasons": page.review_reasons or [],
             "segments": [_segment(s) for s in sorted(page.segments, key=lambda x: (x.bbox[1], x.bbox[0]))]}
+
+
+@router.get("/jobs/{job_id}/chapters")
+def chapters(job_id: int, db: Session = Depends(get_db)):
+    """Índice del libro (capítulos y secciones) con el título traducido de cada uno cuando se encuentra."""
+    job = _job_or_404(db, job_id)
+    return pg.translate_titles(db, job, pg.book_chapters(db, job))
 
 
 class SegmentEdit(BaseModel):

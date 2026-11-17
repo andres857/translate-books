@@ -123,23 +123,7 @@ def _job_done(db: Session, job_id: int) -> Job:
 @router.get("/playground/books/{job_id}/chapters")
 def chapters(job_id: int, db: Session = Depends(get_db)):
     """Capítulos del índice del PDF (marcadores) como rangos de páginas. Sin índice, se detectan por los títulos."""
-    job = _job_done(db, job_id)
-    count = pg.book_pages(db, job)
-    try:
-        with pymupdf.open(Path(job.document.path)) as doc:
-            toc = [(lvl, title.strip(), page) for lvl, title, page, *_ in doc.get_toc(simple=False) if page >= 1]
-    except Exception:  # noqa: BLE001
-        toc = []
-    toc = [t for t in toc if t[0] <= 2]
-    if not toc:
-        return pg.detect_chapters(db, job)
-    out = []
-    for i, (lvl, title, start) in enumerate(toc):
-        nxt = next((p for lv, _, p in toc[i + 1:] if lv <= lvl and p > start), count + 1)
-        end = min(nxt - 1, count)
-        out.append({"title": title or f"Sección {i + 1}", "level": lvl, "pages": f"{start}-{max(start, end)}",
-                    "source": "toc"})
-    return out
+    return pg.book_chapters(db, _job_done(db, job_id))
 
 
 @router.get("/playground/books/{job_id}/pages")

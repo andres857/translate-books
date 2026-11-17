@@ -1,10 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+/* Pestaña Libro: índice por capítulos (izquierda) y visor de páginas con original y traducción (derecha).
+   Debajo del visor, el texto por bloque para corregir la traducción y recomponer la página. */
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  getJob, getSegments, recomposePage, saveSegment, type JobSummary, type PageSegments, type SegmentRow,
+  getJob, getSegments, listBookChapters, recomposePage, saveSegment, type BookChapter,
+  type JobSummary, type PageSegments, type PageSummary, type SegmentRow,
 } from "@/lib/api";
-import { IconArrowLeft, IconArrowRight, IconMinus, IconPlus, IconRefresh, IconWarn } from "../../../components/art";
+import {
+  IconArrowLeft, IconArrowRight, IconChevron, IconMinus, IconPlus, IconRefresh, IconWarn,
+} from "../../../components/art";
 
 const ZOOMS = [60, 80, 100, 130, 170];
 const ACTION: Record<SegmentRow["action"], string> = {
@@ -16,22 +21,118 @@ function plain(html: string | null): string {
     .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 }
 
+// títulos escritos todo en mayúsculas («THE ZODIAC SIGNS») → «The zodiac signs»; los demás, tal cual
+const sentence = (t: string) =>
+  t === t.toUpperCase() && t !== t.toLowerCase() ? t.charAt(0) + t.slice(1).toLowerCase() : t;
+
+const range = (r: string): [number, number] => {
+  const [a, b] = r.split("-").map(Number);
+  return [a, b || a];
+};
+
+type Part = { title: string | null; pages: PageSummary[] };
+type Group = { title: string; original: string | null; first: number; last: number; parts: Part[] };
+
+/* agrupa las páginas por capítulo (nivel superior del índice) y, dentro, por sección (segundo nivel).
+   El título se muestra traducido cuando se encontró su encabezado traducido; si no, el original.
+   Las páginas fuera de todo capítulo van a «Inicio» o «Final». */
+function groupPages(pages: PageSummary[], chapters: BookChapter[]): Group[] {
+  if (!chapters.length) return [];
+  const name = (c: BookChapter) => sentence(c.title_es || c.title);
+  const top = Math.min(...chapters.map((c) => c.level));
+  const tops = chapters.filter((c) => c.level === top).map((c) => ({ c, r: range(c.pages) }));
+  const subs = chapters.filter((c) => c.level > top).map((c) => ({ c, r: range(c.pages) }));
+  const groups: Group[] = [];
+  const add = (title: string, original: string | null, list: PageSummary[], inner: typeof subs) => {
+    if (!list.length) return;
+    const parts: Part[] = [];
+    for (const p of list) {
+      const sub = [...inner].reverse().find((x) => x.r[0] <= p.number && p.number <= x.r[1]);
+      const label = sub ? name(sub.c) : null;
+      const lastPart = parts[parts.length - 1];
+      if (lastPart && lastPart.title === label) lastPart.pages.push(p);
+      else parts.push({ title: label, pages: [p] });
+    }
+    groups.push({ title, original, first: list[0].number, last: list[list.length - 1].number, parts });
+  };
+  const first = tops.length ? tops[0].r[0] : Infinity;
+  add("Inicio", null, pages.filter((p) => p.number < first), []);
+  tops.forEach(({ c, r }) => add(name(c), c.title_es ? sentence(c.title) : null,
+    pages.filter((p) => p.number >= r[0] && p.number <= r[1]), subs.filter((x) => x.r[0] >= r[0] && x.r[0] <= r[1])));
+  const last = tops.length ? Math.max(...tops.map((t) => t.r[1])) : 0;
+  add("Final", null, pages.filter((p) => p.number > last && p.number >= first), []);
+  return groups;
+}
+
+// la vista del libro muestra el resultado tal cual: la evaluación de calidad se hace en el Playground
+type PageState = "ok" | "empty" | "pending";
+const STATE_LABEL: Record<PageState, string> = { ok: "Traducida", empty: "Sin texto", pending: "Pendiente" };
+
+const SHOW_KEY = "compare-sheets";
+type Show = "both" | "original" | "translated";
+
 export function Compare({ data, page, onPage, onChanged }: {
   data: JobSummary; page: number; onPage: (n: number) => void; onChanged: () => void;
 }) {
-  const { job } = data;
+  const { job, book } = data;
   const total = data.pages.length;
   const editable = job.mode === "translate";
   const [info, setInfo] = useState<PageSegments | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [zoom, setZoom] = useState(2);
-  const [side, setSide] = useState<"original" | "translated">("translated");
+  const [show, setShow] = useState<Show>("both");
   const [hover, setHover] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const [chapters, setChapters] = useState<BookChapter[] | null>(null);
+  const [open, setOpen] = useState<Record<number, boolean>>({});
+  const [pageText, setPageText] = useState(String(page));
+
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem(SHOW_KEY);
+      if (v === "both" || v === "original" || v === "translated") setShow(v);
+    } catch { /* vista por defecto */ }
+  }, []);
+
+  function chooseShow(v: Show) {
+    setShow(v);
+    try { localStorage.setItem(SHOW_KEY, v); } catch { /* ignorar */ }
+  }
+
+  useEffect(() => {
+    listBookChapters(job.id).then(setChapters).catch(() => setChapters([]));
+  }, [job.id]);
+
+  const groups = useMemo(() => groupPages(data.pages, chapters ?? []), [data.pages, chapters]);
+  const current = groups.findIndex((g) => page >= g.first && page <= g.last);
+  const currentPart = current >= 0 ? groups[current].parts.find((p) => p.pages.some((x) => x.number === page)) : null;
+  const allOpen = groups.length > 0 && groups.every((_, i) => open[i]);
+  const noText = data.pages.filter((p) => p.segments === 0).length;
+
+  const stateOf = (p: PageSummary): PageState =>
+    p.segments === 0 ? "empty" : job.mode === "translate" && p.translated === 0 ? "pending" : "ok";
+
+  // el capítulo de la página actual se despliega solo
+  useEffect(() => {
+    if (current >= 0) setOpen((o) => (o[current] ? o : { ...o, [current]: true }));
+  }, [current]);
+
+  useEffect(() => setPageText(String(page)), [page]);
+
+  function goTo(e?: React.FormEvent) {
+    e?.preventDefault();
+    const n = Number(pageText);
+    if (Number.isInteger(n) && n >= 1 && n <= total) onPage(n);
+    else setPageText(String(page));
+  }
+
+  function toggleAll() {
+    setOpen(allOpen ? (current >= 0 ? { [current]: true } : {}) : Object.fromEntries(groups.map((_, i) => [i, true])));
+  }
 
   const load = useCallback(async () => {
     try {
@@ -61,9 +162,41 @@ export function Compare({ data, page, onPage, onChanged }: {
     return () => window.removeEventListener("keydown", onKey);
   }, [page, total, onPage]);
 
+  // rueda del ratón sobre las hojas: desplaza la página ampliada y, al llegar al borde, pasa a la siguiente
+  // o a la anterior. Una pausa breve evita saltar varias páginas con un solo gesto (trackpads, ruedas libres).
+  const sheetsRef = useRef<HTMLDivElement>(null);
+  const turn = useRef({ until: 0, dir: 0 });
+  useEffect(() => {
+    const el = sheetsRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || Math.abs(e.deltaY) < Math.abs(e.deltaX) || e.deltaY === 0) return;
+      const down = e.deltaY > 0;
+      const atEdge = down ? el.scrollTop + el.clientHeight >= el.scrollHeight - 2 : el.scrollTop <= 1;
+      if (!atEdge) return; // todavía queda hoja por recorrer: desplazamiento normal
+      e.preventDefault();
+      const now = Date.now();
+      if (now < turn.current.until) return;
+      const next = page + (down ? 1 : -1);
+      if (next < 1 || next > total) return;
+      turn.current = { until: now + 450, dir: down ? 1 : -1 };
+      onPage(next);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [page, total, onPage]);
+
+  // al pasar con la rueda, la hoja nueva empieza arriba (hacia delante) o abajo (hacia atrás)
+  useEffect(() => {
+    const el = sheetsRef.current;
+    if (!el) return;
+    el.scrollTop = turn.current.dir < 0 ? el.scrollHeight : 0;
+    turn.current.dir = 0;
+  }, [page]);
+
   useEffect(() => {
     listRef.current?.querySelector('[aria-current="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [page]);
+  }, [page, open]);
 
   async function save(seg: SegmentRow) {
     const text = drafts[seg.key];
@@ -121,73 +254,136 @@ export function Compare({ data, page, onPage, onChanged }: {
   const edited = info?.segments.filter((s) => s.edited).length ?? 0;
   const dirty = Object.keys(drafts).length;
   const blocks = info?.segments.filter((s) => s.action !== "graphic") ?? [];
+  const translatedLabel = job.mode === "digitize" ? "Digitalizado" : "Traducción";
+  const caption = (v: "original" | "translated") =>
+    v === "original" ? `Original · ${book.source_lang}` : job.mode === "translate" ? `Traducción · ${book.target_lang}` : translatedLabel;
+  const tiles = (list: PageSummary[]) => (
+    <div className="page-tiles">
+      {list.map((p) => {
+        const st = stateOf(p);
+        return (
+          <button key={p.number} type="button" className={`page-tile ${st}`} aria-current={p.number === page}
+            onClick={() => onPage(p.number)} aria-label={`Página ${p.number}, ${STATE_LABEL[st].toLowerCase()}`}
+            title={`Página ${p.number} · ${STATE_LABEL[st]}`}>
+            {p.number}
+          </button>
+        );
+      })}
+    </div>
+  );
 
   return (
     <div className="compare">
-      <div className="pages-list" ref={listRef} role="group" aria-label="Páginas">
-        {data.pages.map((p) => (
-          <button key={p.number} type="button" aria-current={p.number === page} onClick={() => onPage(p.number)}
-            title={p.needs_review ? "Para revisar" : "Correcta"}>
-            <span>Página {p.number}</span>
-            <span className={`dot ${p.needs_review ? "review" : p.segments ? "" : "none"}`}
-              aria-label={p.needs_review ? "para revisar" : "correcta"} role="img" />
+      <aside className="book-index" aria-labelledby="index-title">
+        <div className="index-head">
+          <h2 id="index-title">Índice</h2>
+          {noText > 0 && <span className="muted">{noText} págs. sin texto</span>}
+        </div>
+        <ul className="index-legend" aria-label="Leyenda">
+          {(["ok", "empty", "pending"] as const).map((st) => (
+            <li key={st}>
+              <span className={`page-tile sample ${st}`} aria-hidden="true" />
+              {STATE_LABEL[st]}
+            </li>
+          ))}
+        </ul>
+        <div className="index-scroll" ref={listRef}>
+          {chapters === null && <p className="muted">Cargando índice…</p>}
+          {chapters !== null && groups.length === 0 && tiles(data.pages)}
+          {groups.map((g, i) => (
+            <div key={i} className={`chapter ${i === current ? "current" : ""}`}>
+              <button type="button" className="chapter-head" aria-expanded={!!open[i]}
+                onClick={() => setOpen((o) => ({ ...o, [i]: !o[i] }))}>
+                <IconChevron className="chev" width={14} height={14} />
+                <span className="chapter-title">
+                  <strong>{g.title}</strong>
+                  {g.original && g.original.toLowerCase() !== g.title.toLowerCase() && (
+                    <span className="muted" lang="en">{g.original}</span>
+                  )}
+                </span>
+                <span className="chapter-range">{g.first === g.last ? `p. ${g.first}` : `pp. ${g.first}–${g.last}`}</span>
+              </button>
+              {open[i] && (
+                <div className="chapter-body">
+                  {g.parts.map((part, j) => (
+                    <div key={j} className="chapter-part">
+                      {(part.title || g.parts.length > 1) && (
+                        <div className="chapter-sub">{part.title ?? "Apertura"}</div>
+                      )}
+                      {tiles(part.pages)}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+        {groups.length > 1 && (
+          <button type="button" className="link-btn" onClick={toggleAll}>
+            {allOpen ? "Plegar el índice" : `Ver los ${chapters?.length ?? groups.length} capítulos`}
           </button>
-        ))}
-      </div>
+        )}
+      </aside>
 
       <div className="viewer">
-        <div className="toolbar">
-          <div className="row">
-            <button type="button" className="btn secondary" disabled={page <= 1} onClick={() => onPage(page - 1)}
-              aria-label="Página anterior"><IconArrowLeft /></button>
-            <strong>Página {page} de {total}</strong>
-            <button type="button" className="btn secondary" disabled={page >= total} onClick={() => onPage(page + 1)}
-              aria-label="Página siguiente"><IconArrowRight /></button>
-            {info && (
-              <span className={`badge ${info.needs_review ? "review" : "ok"}`}>
-                {info.needs_review ? "Para revisar" : "Correcta"}
-              </span>
-            )}
-          </div>
-          <div className="row">
-            <div className="seg-control narrow-only" role="group" aria-label="Versión que se muestra">
-              <button type="button" aria-pressed={side === "original"} onClick={() => setSide("original")}>Original</button>
-              <button type="button" aria-pressed={side === "translated"} onClick={() => setSide("translated")}>Traducción</button>
+        <section className="viewer-card" aria-label="Visor de páginas">
+          <div className="viewer-bar">
+            <div className="row">
+              <button type="button" className="btn secondary icon" disabled={page <= 1} onClick={() => onPage(page - 1)}
+                aria-label="Página anterior"><IconArrowLeft /></button>
+              <form className="page-field" onSubmit={goTo}>
+                <label htmlFor="page-field">Página</label>
+                <input id="page-field" type="text" inputMode="numeric" value={pageText}
+                  onChange={(e) => setPageText(e.target.value.replace(/\D/g, ""))} onBlur={() => goTo()}
+                  onFocus={(e) => e.target.select()} aria-describedby="page-total" />
+                <span id="page-total">de {total}</span>
+              </form>
+              <button type="button" className="btn secondary icon" disabled={page >= total} onClick={() => onPage(page + 1)}
+                aria-label="Página siguiente"><IconArrowRight /></button>
+              {current >= 0 && (
+                <nav className="crumbs" aria-label="Ubicación en el libro">
+                  <span>{groups[current].title}</span>
+                  {currentPart?.title && <><span aria-hidden="true">›</span><span>{currentPart.title}</span></>}
+                </nav>
+              )}
             </div>
-            <button type="button" className="btn secondary" disabled={zoom === 0} onClick={() => setZoom(zoom - 1)}
-              aria-label="Reducir"><IconMinus /></button>
-            <span className="muted" aria-live="polite">{ZOOMS[zoom]}%</span>
-            <button type="button" className="btn secondary" disabled={zoom === ZOOMS.length - 1}
-              onClick={() => setZoom(zoom + 1)} aria-label="Ampliar"><IconPlus /></button>
-          </div>
-        </div>
-
-        {info && info.reasons.length > 0 && (
-          <div className="alert">
-            <IconWarn />
-            <div>
-              <strong>Motivos de revisión</strong>
-              <ul>{info.reasons.map((r, i) => <li key={i}>{r}</li>)}</ul>
+            <div className="row">
+              <div className="seg-control" role="group" aria-label="Qué se muestra">
+                <button type="button" aria-pressed={show === "original"} onClick={() => chooseShow("original")}>Original</button>
+                <button type="button" aria-pressed={show === "both"} onClick={() => chooseShow("both")}>Comparar</button>
+                <button type="button" aria-pressed={show === "translated"} onClick={() => chooseShow("translated")}>
+                  {translatedLabel}
+                </button>
+              </div>
+              <button type="button" className="btn secondary icon" disabled={zoom === 0} onClick={() => setZoom(zoom - 1)}
+                aria-label="Reducir"><IconMinus /></button>
+              <span className="zoom-value" aria-live="polite">{ZOOMS[zoom]}%</span>
+              <button type="button" className="btn secondary icon" disabled={zoom === ZOOMS.length - 1}
+                onClick={() => setZoom(zoom + 1)} aria-label="Ampliar"><IconPlus /></button>
             </div>
           </div>
-        )}
 
-        {/* las dos hojas comparten un único contenedor con desplazamiento: se mueven juntas */}
-        <div className="sheets" tabIndex={0} role="group" aria-label={`Original y traducción de la página ${page}`}>
-          <div className="sheets-inner single" style={{ width: `${ZOOMS[zoom]}%` }}>
-            {(["original", "translated"] as const).map((v) => (
-              <figure key={v} className={`sheet ${side === v ? "" : "hidden-narrow"}`}>
-                <figcaption>{v === "original" ? "Original" : job.mode === "digitize" ? "Digitalizado" : "Traducción"}</figcaption>
-                <div className="paper">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={src(v)} alt={`Página ${page}, ${v === "original" ? "original" : "resultado"}`}
-                    width={info?.width} height={info?.height} />
-                  {mark && <div className="mark" style={mark} />}
-                </div>
-              </figure>
-            ))}
+          {/* las dos hojas comparten un único contenedor con desplazamiento: se mueven juntas */}
+          <div className="sheets" ref={sheetsRef} tabIndex={0} role="group" aria-label={`Página ${page}`}>
+            <div className={`sheets-inner ${show === "both" ? "" : "single"}`}
+              style={{ "--layout-zoom": `${ZOOMS[zoom]}%` } as React.CSSProperties}>
+              {(["original", "translated"] as const).filter((v) => show === "both" || show === v).map((v) => (
+                <figure key={v} className="sheet">
+                  <figcaption>{caption(v)}</figcaption>
+                  <div className="paper">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={src(v)} alt={`Página ${page}, ${v === "original" ? "original" : "resultado"}`}
+                      width={info?.width} height={info?.height} />
+                    {mark && <div className="mark" style={mark} />}
+                  </div>
+                </figure>
+              ))}
+            </div>
           </div>
-        </div>
+          <p className="viewer-hint">
+            ← → o la rueda del ratón para cambiar de página{show === "both" ? " · en Comparar, el desplazamiento y el zoom van sincronizados" : ""}
+          </p>
+        </section>
 
         {error && <div className="alert error" role="alert"><IconWarn /><span>{error}</span></div>}
         {notice && <div className="alert ok" role="status"><IconRefresh /><span>{notice}</span></div>}
@@ -210,8 +406,8 @@ export function Compare({ data, page, onPage, onChanged }: {
             )}
           </div>
 
-          {!info && !error && <p>Cargando…</p>}
-          {info && blocks.length === 0 && <p>Esta página no tiene texto.</p>}
+          {!info && !error && <p className="muted">Cargando…</p>}
+          {info && blocks.length === 0 && <p className="muted">Esta página no tiene texto.</p>}
           <div className="blocks">
             {blocks.map((s) => {
               const canEdit = editable && (s.action === "translate" || s.action === "review");

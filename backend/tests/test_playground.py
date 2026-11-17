@@ -473,3 +473,61 @@ def test_prepare_generates_glossary_and_tolerates_failure(db, book, monkeypatch)
         monkeypatch.setattr(rsmod, "make_translator", no_key)
         worker.prepare_glossary(s, job, None, {}, prepared, PipelineOptions(concurrency=1), progress)  # no lanza
         assert s.query(GlossaryEntry).filter_by(document_id=job.document_id).count() == 1
+
+
+def test_delete_job_endpoint_refuses_active_and_removes_book(db, book, tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app.db.models import Document, Job
+    from app.main import app
+
+    monkeypatch.setattr(pg, "get_settings", lambda: type("S", (), {"outputs_dir": tmp_path / "o",
+                                                                    "uploads_dir": tmp_path / "u"})())
+    c = TestClient(app)
+    with db() as s:
+        job = s.get(Job, book)
+        doc_id, job.status = job.document_id, "running"
+        s.commit()
+    assert c.delete(f"/api/jobs/{book}").status_code == 409
+    with db() as s:
+        s.get(Job, book).status = "failed"  # también se pueden borrar los fallidos o cancelados
+        s.commit()
+    assert c.delete(f"/api/jobs/{book}").status_code == 200
+    with db() as s:
+        assert s.get(Job, book) is None and s.get(Document, doc_id) is None
+    assert c.delete(f"/api/jobs/{book}").status_code == 404
+
+
+def test_book_view_chapters_titles_review_and_info(db):
+    """Vista Libro: índice con títulos traducidos y autor/subtítulo de la cabecera."""
+    from fastapi.testclient import TestClient
+
+    from app.db.models import Document, Job, Page, Segment
+    from app.main import app
+
+    with db() as s:
+        doc = Document(original_name="The Book (Carole Taylor) (z-lib.sk).pdf", path="/no/existe.pdf", sha256="t",
+                       page_count=4, title_es="El libro - Una guía completa")
+        job = Job(document=doc, status="done", options={})
+        s.add(job)
+        s.flush()
+        texts = {2: ("IN THE BEGINNING", "EN EL PRINCIPIO"), 3: ("Aries", "Aries"), 4: ("Body", "Cuerpo")}
+        for n in range(1, 5):
+            page = Page(job_id=job.id, number=n, width=400, height=600, kind="digital")
+            if n in texts:
+                page.segments = [Segment(seg_key=f"p{n:03d}_s001", bbox=[0, 0, 10, 10], block_type="heading",
+                                         source_text=texts[n][0], source_html=texts[n][0], translation=texts[n][1],
+                                         action="translate")]
+            s.add(page)
+        s.commit()
+        chapters = [{"title": "In the Beginning", "level": 1, "pages": "2-4", "source": "toc"},
+                    {"title": "Aries 21 March–20 April", "level": 2, "pages": "3-3", "source": "toc"},
+                    {"title": "Unknown", "level": 2, "pages": "4-4", "source": "toc"}]
+        out = pg.translate_titles(s, job, chapters)
+        jid = job.id
+    assert [c["title_es"] for c in out] == ["EN EL PRINCIPIO", "Aries", None]
+
+    c = TestClient(app)
+    info = c.get(f"/api/admin/jobs/{jid}/summary").json()["book"]
+    assert (info["title"], info["subtitle"], info["author"]) == ("El libro", "Una guía completa", "Carole Taylor")
+    assert c.get(f"/api/admin/jobs/{jid}/chapters").status_code == 200  # sin PDF: capítulos detectados o []

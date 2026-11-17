@@ -87,7 +87,7 @@ export default function AdminSettingsPage() {
           <h1>Configuración</h1>
           <p>Llave y modelo de DeepSeek para traducir y corregir. Se aplica al siguiente libro, sin reiniciar.</p>
         </div>
-        <Link className="btn secondary" href="/admin">Ver libros</Link>
+        <Link className="btn secondary" href="/">Ver libros</Link>
       </div>
 
       <section className="card" aria-labelledby="method-title">

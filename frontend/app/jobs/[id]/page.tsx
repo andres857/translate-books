@@ -100,7 +100,7 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
 
   return (
     <main>
-      <Link href="/" className="back"><IconArrowLeft width={16} height={16} /> Subir otro libro</Link>
+      <Link href="/" className="back"><IconArrowLeft width={16} height={16} /> Libros</Link>
 
       <div className="page-head">
         <div>

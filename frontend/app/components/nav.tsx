@@ -1,34 +1,39 @@
 "use client";
 
 /* Barra lateral (handoff nav-2): secciones plegables con título pequeño y enlaces de 32 px con icono + texto. */
-import { useEffect, useState, type ComponentType, type SVGProps } from "react";
+import { Fragment, useEffect, useState, type ComponentType, type SVGProps } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { getSettings, methodLabel, SETTINGS_EVENT } from "@/lib/api";
-import { IconBook, IconChevron, IconCloud, IconFlask, IconHistory, IconLayers, IconSettings, IconText, IconUpload } from "./art";
+import { IconBook, IconChevron, IconCloud, IconFlask, IconHistory, IconLayers, IconSettings, IconText } from "./art";
 
-type Item = { href: string; label: string; short: string; Icon: ComponentType<SVGProps<SVGSVGElement>>; match: (p: string) => boolean };
+type Item = {
+  href: string; label: string; short: string; Icon: ComponentType<SVGProps<SVGSVGElement>>; match: (p: string) => boolean;
+  children?: Item[]; // subitems, sangrados debajo del item
+};
 
+// dos secciones: Libros (la vista principal) arriba y Administración debajo; Prompts e Historial cuelgan de Playground
 const SECTIONS: { id: string; title: string; items: Item[] }[] = [
   {
-    id: "translate",
-    title: "Traducir",
+    id: "books",
+    title: "Libros",
     items: [
-      { href: "/", label: "Subir un libro", short: "Inicio", Icon: IconUpload, match: (p) => p === "/" || p.startsWith("/jobs") },
+      { href: "/", label: "Libros", short: "Libros", Icon: IconLayers,
+        match: (p) => p === "/" || p === "/admin" || p.startsWith("/jobs") || p.startsWith("/admin/jobs") },
     ],
   },
   {
     id: "admin",
     title: "Administración",
     items: [
-      { href: "/admin", label: "Libros", short: "Libros", Icon: IconLayers,
-        match: (p) => p === "/admin" || p.startsWith("/admin/jobs") },
-      { href: "/admin/prompts", label: "Prompts", short: "Prompts", Icon: IconText,
-        match: (p) => p.startsWith("/admin/prompts") },
       { href: "/admin/playground", label: "Playground", short: "Probar", Icon: IconFlask,
-        match: (p) => p.startsWith("/admin/playground") && !p.startsWith("/admin/playground/history") },
-      { href: "/admin/playground/history", label: "Historial", short: "Historial", Icon: IconHistory,
-        match: (p) => p.startsWith("/admin/playground/history") },
+        match: (p) => p.startsWith("/admin/playground") && !p.startsWith("/admin/playground/history"),
+        children: [
+          { href: "/admin/prompts", label: "Prompts", short: "Prompts", Icon: IconText,
+            match: (p) => p.startsWith("/admin/prompts") },
+          { href: "/admin/playground/history", label: "Historial", short: "Historial", Icon: IconHistory,
+            match: (p) => p.startsWith("/admin/playground/history") },
+        ] },
       { href: "/admin/settings", label: "Configuración", short: "Ajustes", Icon: IconSettings,
         match: (p) => p.startsWith("/admin/settings") || p.startsWith("/settings") },
     ],
@@ -48,7 +53,7 @@ function NavLink({ item, on }: { item: Item; on: boolean }) {
 
 export function SideNav() {
   const pathname = usePathname() ?? "/";
-  const [open, setOpen] = useState<Record<string, boolean>>({ translate: true, admin: true });
+  const [open, setOpen] = useState<Record<string, boolean>>({ books: true, admin: true });
   const [method, setMethod] = useState<{ label: string; provider: string } | null>(null);
 
   useEffect(() => {
@@ -85,7 +90,16 @@ export function SideNav() {
                 </button>
               </div>
               <div id={`nav-${sec.id}-list`} className="sidenav-list" hidden={!expanded}>
-                {sec.items.map((item) => <NavLink key={item.href} item={item} on={item.match(pathname)} />)}
+                {sec.items.map((item) => (
+                  <Fragment key={item.href}>
+                    <NavLink item={item} on={item.match(pathname)} />
+                    {item.children && (
+                      <div className="sidenav-sub" role="group" aria-label={`Dentro de ${item.label}`}>
+                        {item.children.map((c) => <NavLink key={c.href} item={c} on={c.match(pathname)} />)}
+                      </div>
+                    )}
+                  </Fragment>
+                ))}
               </div>
             </section>
           );

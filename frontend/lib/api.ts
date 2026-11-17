@@ -206,6 +206,11 @@ export async function listJobs(): Promise<JobStatus[]> {
   return parse(await fetch("/api/jobs", { cache: "no-store" }));
 }
 
+/** Elimina el libro con todo lo suyo (páginas, traducciones, archivos, evaluaciones, glosario propio). */
+export async function deleteJob(id: number): Promise<void> {
+  await parse(await fetch(`/api/jobs/${id}`, { method: "DELETE" }));
+}
+
 export interface PageSummary {
   number: number;
   kind: string;
@@ -217,8 +222,17 @@ export interface PageSummary {
   min_scale: number | null;
 }
 
+export interface BookInfo {
+  title: string;
+  subtitle: string | null;
+  author: string | null;
+  source_lang: string;
+  target_lang: string;
+}
+
 export interface JobSummary {
   job: JobStatus;
+  book: BookInfo;
   totals: { pages: number; ok: number; review: number; by_kind: Record<string, number>; segments: number; edited: number };
   checks: Record<string, boolean>;
   stats: Record<string, number>;
@@ -266,6 +280,18 @@ export async function saveSegment(id: string | number, key: string, translation:
       body: JSON.stringify({ translation }),
     }),
   );
+}
+
+export interface BookChapter {
+  title: string;
+  title_es: string | null;
+  level: number;
+  pages: string;
+  source: "toc" | "detected";
+}
+
+export async function listBookChapters(id: string | number): Promise<BookChapter[]> {
+  return parse(await fetch(`/api/admin/jobs/${id}/chapters`, { cache: "no-store" }));
 }
 
 export async function recomposePage(id: string | number, page: number): Promise<JobStatus> {
