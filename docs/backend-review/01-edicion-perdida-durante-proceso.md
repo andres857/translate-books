@@ -2,7 +2,7 @@
 
 - **Severidad:** Alto
 - **Categoría:** Integridad de datos
-- **Estado:** abierto
+- **Estado:** resuelto · commit(s) `6a5443c`
 - **Ubicación:** `backend/app/api/routes_admin.py:116-135` (`edit_segment`), `backend/app/worker.py:68-91` (`save_results`) y `:178-205` (`process_recompose`)
 - **Aceptación:** [01-edicion-perdida-durante-proceso.aceptacion.md](01-edicion-perdida-durante-proceso.aceptacion.md)
 
