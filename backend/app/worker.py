@@ -8,7 +8,7 @@ import logging
 import time
 from pathlib import Path
 
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 
 from app.config import get_settings
 from app.db.cache import SqlCache
@@ -63,6 +63,17 @@ def claim_job() -> int | None:
         )).first()
         s.commit()
         return row[0] if row else None
+
+
+def close_job(s, job_id: int, **values) -> bool:
+    """Cierra un trabajo solo si sigue 'running': la API pudo cancelarlo (o reanudarlo) después de la última
+    consulta de should_stop. Si ya no está en curso, descarta lo pendiente de la sesión y no toca nada más."""
+    if s.execute(update(Job).where(Job.id == job_id, Job.status == "running").values(**values)).rowcount:
+        s.commit()
+        return True
+    s.rollback()
+    log.info("Trabajo %s: ya no está en curso (cancelado); no se cierra como %s", job_id, values.get("status"))
+    return False
 
 
 def save_results(s, job: Job, pages, only: set[int] | None = None) -> None:
@@ -154,8 +165,8 @@ def process(job_id: int) -> None:
             save_auto(s, doc, result.domain, result.glossary_auto)
         doc.title, doc.title_es = result.title, result.title_es
         job.output_path, job.report_path = str(result.output_pdf), str(result.report_path)
-        job.status, job.stage, job.progress = "done", "done", 100.0
-        s.commit()
+        if not close_job(s, job.id, status="done", stage="done", progress=100.0):
+            return
         log.info("Trabajo %s terminado: %s", job.id, result.output_pdf)
         try:  # EPUB para Kindle; si falla, el PDF sigue disponible y el EPUB se genera al descargarlo
             log.info("EPUB listo: %s", build_epub_for_job(s, job))
@@ -168,9 +179,7 @@ def process(job_id: int) -> None:
     except Exception as e:  # noqa: BLE001
         log.exception("Trabajo %s falló", job_id)
         s.rollback()
-        job = s.get(Job, job_id)
-        job.status, job.error = "failed", friendly_error(e)
-        s.commit()
+        close_job(s, job_id, status="failed", error=friendly_error(e))
     finally:
         s.close()
 
@@ -201,8 +210,7 @@ def process_recompose(s, job: Job, options: dict, translator, terms, glossary, o
                                       if isinstance(e, FatalAPIError) else "No se pudo recomponer la página.")
     options.pop("recompose", None)
     job.options = options
-    job.status, job.stage, job.progress, job.current_page = "done", "done", 100.0, None
-    s.commit()
+    close_job(s, job.id, status="done", stage="done", progress=100.0, current_page=None)
 
 
 def process_prepare(s, job: Job, rs, terms, opts, progress, should_stop) -> None:
@@ -215,8 +223,8 @@ def process_prepare(s, job: Job, rs, terms, opts, progress, should_stop) -> None
     s.commit()  # los bloques quedan guardados aunque falle el glosario
     if opts.discover_glossary:
         prepare_glossary(s, job, rs, terms, book, opts, progress)
-    job.status, job.stage, job.progress, job.current_page = "done", "done", 100.0, None
-    s.commit()
+    if not close_job(s, job.id, status="done", stage="done", progress=100.0, current_page=None):
+        return
     log.info("Trabajo %s preparado: %s páginas, %s bloques", job.id, len(book.pages),
              sum(1 for p in book.pages for sg in p.segments if sg.action == "translate"))
 
@@ -254,8 +262,8 @@ def process_digitize(s, job: Job, rs, options: dict, progress, should_stop) -> N
     options["ocr_pages"] = result.report["estadisticas"]["paginas_ocr_lista"]
     job.options = options
     job.output_path, job.report_path = str(result.output_pdf), str(result.report_path)
-    job.status, job.stage, job.progress = "done", "done", 100.0
-    s.commit()
+    if not close_job(s, job.id, status="done", stage="done", progress=100.0):
+        return
     log.info("Trabajo %s digitalizado: %s", job.id, result.output_pdf)
     try:
         log.info("EPUB listo: %s", build_epub_for_job(s, job))

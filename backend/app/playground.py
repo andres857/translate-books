@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pymupdf
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, update
 
 from app import runtime_settings
 from app.config import get_settings
@@ -624,13 +624,14 @@ def execute(run_id: int) -> None:
         caches = dict(state.get("caches") or {})
         usage = dict(state.get("usage") or {})
         results = list(run.results or [])
-        run.status, run.error = "running", None
-        s.commit()
+        if not _set_if_running(s, run_id, ("queued", "running"), status="running", error=None):
+            return  # cancelada entre claim_run y aquí: no se vuelve a poner en curso
         n = len(run.variants)
 
-        def save() -> None:
+        def save(commit: bool = True) -> None:
             run.state = {**state, "caches": dict(caches), "usage": dict(usage)}  # nuevo dict: se detecta el cambio
-            s.commit()
+            if commit:
+                s.commit()
 
         def compose(i: int, only: list[int] | None = None) -> None:
             state["stage"], state["composing"] = "compose", results[i]["label"]
@@ -669,9 +670,9 @@ def execute(run_id: int) -> None:
                 prev = usage.get(label)
                 merge_usage(prev, res)
                 usage[label] = {k: res.get(k) for k in USAGE_KEYS}
-                run.status = "paused"
-                run.error = f"{res['error']} Lo ya evaluado se conserva: recarga saldo y pulsa «Reanudar»."
-                save()
+                save(commit=False)
+                _set_if_running(s, run_id, status="paused",
+                           error=f"{res['error']} Lo ya evaluado se conserva: recarga saldo y pulsa «Reanudar».")
                 return
             merge_usage(usage.pop(label, None), res)
             caches.pop(label, None)
@@ -688,23 +689,31 @@ def execute(run_id: int) -> None:
         for i, r in enumerate(results):
             if run.task == "translate" and r.get("segments") and not r.get("pdf") and not r.get("compose_error"):
                 compose(i)
-        run.status, run.progress, run.current_variant = "done", 100.0, None
         run.state = {"done": state.get("total"), "total": state.get("total")}  # las salidas ya están en results
-        s.commit()
+        _set_if_running(s, run_id, status="done", progress=100.0, current_variant=None)
     except Cancelled:
         s.rollback()
         log.info("Playground %s cancelado", run_id)
     except Exception as e:  # noqa: BLE001
         s.rollback()
-        run = s.get(PlaygroundRun, run_id)
-        if run.status != "cancelled":
-            run.status = "failed"
-            run.error = str(e)[:500] if isinstance(e, FatalAPIError) else "No se pudo ejecutar la evaluación."
-            if not isinstance(e, FatalAPIError):
-                log.exception("Playground %s falló", run_id)
-            s.commit()
+        if not isinstance(e, FatalAPIError):
+            log.exception("Playground %s falló", run_id)
+        _set_if_running(s, run_id, status="failed",
+                   error=str(e)[:500] if isinstance(e, FatalAPIError) else "No se pudo ejecutar la evaluación.")
     finally:
         s.close()
+
+
+def _set_if_running(s, run_id: int, allowed: tuple[str, ...] = ("running",), **values) -> bool:
+    """Actualiza la evaluación solo si sigue en curso: la API pudo cancelarla después de la última consulta
+    de should_stop. Si ya no lo está, descarta lo pendiente de la sesión y no toca nada más."""
+    if s.execute(update(PlaygroundRun).where(PlaygroundRun.id == run_id, PlaygroundRun.status.in_(allowed))
+                 .values(**values)).rowcount:
+        s.commit()
+        return True
+    s.rollback()
+    log.info("Playground %s: ya no está en curso (cancelado); no se marca como %s", run_id, values.get("status"))
+    return False
 
 
 def try_page(s, run: PlaygroundRun, job: Job, state: dict, results: list, pages: list[int], ctx: dict,
@@ -729,8 +738,8 @@ def try_page(s, run: PlaygroundRun, job: Job, state: dict, results: list, pages:
     def finish(error: str | None = None) -> None:
         for k in ("try", "trying", "stage", "composing"):
             state.pop(k, None)
-        run.status, run.progress, run.current_variant, run.error = "done", 100.0, None, error
-        save()
+        save(commit=False)
+        _set_if_running(s, run.id, status="done", progress=100.0, current_variant=None, error=error)
 
     if res["error"] and not any(o.get("output") for o in res["segments"].values()):
         finish(f"La prueba de la variante {label} en la página {page} no se pudo hacer: {res['error']}")
