@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { connection } from "next/server";
+import { getServerSession } from "@/lib/server/session";
 import { AppShell } from "./components/app-shell";
 import "./tokens.css";
 import "./globals.css";
@@ -17,10 +18,12 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   // renderizado por solicitud: Next aplica a sus scripts el nonce de la CSP que pone proxy.ts
   await connection();
+  // la sesión se resuelve aquí: la primera respuesta ya trae la barra lateral y la vista (sin «Cargando…»)
+  const session = await getServerSession();
   return (
     <html lang="es">
       <body className={font.className}>
-        <AppShell>{children}</AppShell>
+        <AppShell initial={session}>{children}</AppShell>
       </body>
     </html>
   );

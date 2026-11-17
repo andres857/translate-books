@@ -30,9 +30,16 @@ export function useAuth(): AuthContext {
 
 export { safeNext } from "./redirect";
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<AuthState | null>(null);
-  const [ready, setReady] = useState(false);
+/** `initial`: sesión leída en el servidor (layout). null = sin sesión; undefined = desconocida → se consulta. */
+export function AuthProvider({ children, initial }: { children: ReactNode; initial?: AuthState | null }) {
+  // el CSRF se guarda en el primer render, antes de que cualquier vista haga una escritura
+  const [state, setState] = useState<AuthState | null>(() => {
+    // solo en el navegador: en el servidor el módulo es compartido entre peticiones de distintos usuarios
+    if (initial && typeof window !== "undefined") setCsrfToken(initial.csrf_token);
+    return initial ?? null;
+  });
+  const [ready, setReady] = useState(initial !== undefined);
+  const knownAtStart = useRef(initial !== undefined);
   const channel = useRef<BroadcastChannel | null>(null);
 
   const store = useCallback((s: AuthState | null) => {
@@ -67,7 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [store]);
 
   useEffect(() => {
-    void refresh();
+    if (!knownAtStart.current) void refresh(); // si el servidor ya la trajo, no se repite la consulta
     const onAuth = () => void refresh();
     const onVisible = () => { if (document.visibilityState === "visible") void refresh(); };
     window.addEventListener(AUTH_EVENT, onAuth);
