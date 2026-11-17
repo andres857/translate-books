@@ -63,7 +63,7 @@ y `translation_cache` no tienen relaciones. Diferencias modelo/esquema: el CHECK
 | 06 | Alto | [Las subidas directas bloquean el event loop](06-async-bloqueante-subidas.md) | [criterios](06-async-bloqueante-subidas.aceptacion.md) | resuelto |
 | 07 | Bajo | [El flujo SSE de progreso hace consultas síncronas en el loop y no se usa](07-sse-sin-uso.md) | [criterios](07-sse-sin-uso.aceptacion.md) | abierto |
 | 08 | Medio | [Un usuario sin rol admin ve la pista de la llave de DeepSeek](08-settings-expone-pista-llave.md) | [criterios](08-settings-expone-pista-llave.aceptacion.md) | resuelto |
-| 09 | Medio | [Las FK no definen qué pasa al borrar y el borrado de un libro carga todo en memoria](09-fks-sin-ondelete.md) | [criterios](09-fks-sin-ondelete.aceptacion.md) | abierto |
+| 09 | Medio | [Las FK no definen qué pasa al borrar y el borrado de un libro carga todo en memoria](09-fks-sin-ondelete.md) | [criterios](09-fks-sin-ondelete.aceptacion.md) | resuelto |
 | 10 | Medio | [Nada en la BD impide duplicados en bloques, glosario y términos](10-sin-unique-duplicados.md) | [criterios](10-sin-unique-duplicados.aceptacion.md) | resuelto |
 | 11 | Medio | [Varios parámetros de entrada son texto libre](11-entradas-sin-validar.md) | [criterios](11-entradas-sin-validar.aceptacion.md) | abierto |
 | 12 | Medio | [PDFs y sesiones de base de datos que no se cierran](12-recursos-sin-cerrar.md) | [criterios](12-recursos-sin-cerrar.aceptacion.md) | resuelto |
@@ -74,6 +74,7 @@ y `translation_cache` no tienen relaciones. Diferencias modelo/esquema: el CHECK
 | 17 | Bajo | [El CHECK del rol existe en la BD pero no en el modelo](17-check-rol-solo-en-migracion.md) | [criterios](17-check-rol-solo-en-migracion.aceptacion.md) | abierto |
 | 18 | Bajo | [Variables reutilizadas y un diccionario de locks que crece sin límite](18-estilo-menor.md) | [criterios](18-estilo-menor.aceptacion.md) | abierto |
 | 19 | Bajo | [Avisos de ruff previos silenciados por archivo](19-avisos-ruff-pendientes.md) | [criterios](19-avisos-ruff-pendientes.aceptacion.md) | abierto |
+| 20 | Bajo | [Al borrar un libro, glosario, términos e intentos se borran fila a fila](20-borrado-glosario-fila-a-fila.md) | [criterios](20-borrado-glosario-fila-a-fila.aceptacion.md) | abierto |
 
 ## Preguntas de negocio (se hacen antes de la ficha)
 
