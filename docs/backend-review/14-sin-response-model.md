@@ -2,7 +2,7 @@
 
 - **Severidad:** Medio
 - **Categoría:** Contrato de la API
-- **Estado:** abierto
+- **Estado:** resuelto · commit(s) `5ae85be`
 - **Ubicación:** Todos los routers de `backend/app/api/` (p. ej. `routes_jobs.py:158-195` `job_status`, `routes_settings.py:376`, `auth/users.py` `public`)
 - **Aceptación:** [14-sin-response-model.aceptacion.md](14-sin-response-model.aceptacion.md)
 
@@ -45,3 +45,9 @@ contrato):
 - No es un cambio de contrato: el frontend no se toca.
 - Fuera de alcance (siguiente paso, sin ficha nueva): `routes_playground.py`, `routes_admin.py` y el resto de
   routers (`routes_terms.py`, `routes_files.py`).
+
+Decisiones al implementar: las fechas siguen como texto ISO (`str`), no `datetime`, porque Pydantic las
+serializaría con `Z` en vez de `+00:00`; `idle_timeout_minutes` es `float` (hoy sale `30.0`). La unión
+`SettingsPublic | SettingsUserView` lleva `extra="forbid"` en la vista del user para que la del admin nunca encaje
+en ella y se recorte. El test de rutas recorre `router.routes` de los cuatro routers: en FastAPI 0.163
+`app.routes` solo lista los routers incluidos, no sus rutas.
