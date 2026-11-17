@@ -71,11 +71,11 @@ def test_factory(store):
 
 
 def test_settings_api(store):
-    from fastapi.testclient import TestClient
+    from .conftest import admin_client
 
     from app.main import app
 
-    c = TestClient(app)
+    c = admin_client(app)
     r = c.put("/api/settings", json={"provider": "deepseek", "deepseek_api_key": KEY})
     assert r.status_code == 200 and KEY not in r.text
     assert c.get("/api/settings").json()["deepseek_key_set"] is True

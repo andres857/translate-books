@@ -3,6 +3,7 @@
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { getHealth, getJob, jobAction, type JobStatus, type StageState } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { IconArrowLeft, IconCheck, IconDownload, IconHourglass, IconRefresh, IconWarn, IconX } from "../../components/art";
 
 const STATE_TEXT: Record<StageState, string> = {
@@ -39,6 +40,7 @@ function BadgeIcon({ state }: { state: StageState }) {
 }
 
 export default function JobPage({ params }: { params: Promise<{ id: string }> }) {
+  const { isAdmin } = useAuth();
   const { id } = use(params);
   const [job, setJob] = useState<JobStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -107,7 +109,7 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
           <h1>{done ? "Tu libro está listo" : job.mode === "digitize" ? "Digitalizando tu libro" : "Traduciendo tu libro"}</h1>
           <p>{job.original_name.replace(/\.pdf$/i, "")}{job.page_count ? ` · ${job.page_count} páginas` : ""}</p>
         </div>
-        <Link className="btn secondary" href={`/admin/jobs/${job.id}`}>Ver en administración</Link>
+        {isAdmin && <Link className="btn secondary" href={`/admin/jobs/${job.id}`}>Ver en administración</Link>}
       </div>
 
       {error && <div className="alert error" role="alert"><IconWarn /><span>{error}</span></div>}
@@ -182,7 +184,7 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
                   ))}
                 </ul>
                 {job.review_pages.length > 20 && <p>… y {job.review_pages.length - 20} más.</p>}
-                <p><Link href={`/admin/jobs/${job.id}`}>Revisarlas en administración</Link></p>
+                {isAdmin && <p><Link href={`/admin/jobs/${job.id}`}>Revisarlas en administración</Link></p>}
               </div>
             </div>
           )}

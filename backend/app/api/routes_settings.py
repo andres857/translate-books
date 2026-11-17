@@ -1,8 +1,9 @@
 """Ajustes de traducción editables desde la web. La llave de DeepSeek nunca se devuelve."""
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app import runtime_settings
+from app.auth.deps import require_admin
 from app.worker import friendly_error
 
 router = APIRouter(prefix="/api", tags=["settings"])
@@ -21,7 +22,7 @@ def get_settings_view():
     return runtime_settings.load().public()
 
 
-@router.put("/settings")
+@router.put("/settings", dependencies=[Depends(require_admin)])
 def save_settings(body: SettingsIn):
     try:
         return runtime_settings.update(body.model_dump(exclude_none=True)).public()
@@ -29,7 +30,7 @@ def save_settings(body: SettingsIn):
         raise HTTPException(400, str(e)) from None
 
 
-@router.post("/settings/test")
+@router.post("/settings/test", dependencies=[Depends(require_admin)])
 def test_settings():
     rs = runtime_settings.load()
     try:

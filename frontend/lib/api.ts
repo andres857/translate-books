@@ -23,6 +23,41 @@ export interface JobStatus {
   review_pages: { page: number; reasons: string[] }[];
 }
 
+// ---------------------------------------------------------------- sesión
+// El token de sesión vive en una cookie HttpOnly que JavaScript no ve. Aquí solo se guarda, en memoria,
+// el token CSRF que devuelve /api/auth/me (nunca en localStorage ni en la URL).
+
+let csrfToken: string | null = null;
+export function setCsrfToken(token: string | null) {
+  csrfToken = token;
+}
+
+/** Lo emite parse() cuando el servidor dice que la sesión ya no vale o que falta cambiar la contraseña. */
+export const AUTH_EVENT = "astrobooks:auth";
+
+const UNSAFE = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+/** Encabezados que el backend exige: el de la aplicación siempre y el CSRF en escrituras. */
+export function apiHeaders(method: string): Record<string, string> {
+  const h: Record<string, string> = { "X-Requested-With": "traductor" };
+  if (UNSAFE.has(method.toUpperCase()) && csrfToken) h["X-CSRF-Token"] = csrfToken;
+  return h;
+}
+
+/** fetch hacia /api/* con la cookie de sesión, el encabezado de la aplicación y el CSRF. */
+export function apiFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers);
+  for (const [k, v] of Object.entries(apiHeaders(init.method ?? "GET"))) headers.set(k, v);
+  return fetch(url, { ...init, headers, credentials: "same-origin" });
+}
+
+/** Error de la API con su código (`REAUTH_REQUIRED`, `LAST_ADMIN`…) además del mensaje. */
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number, readonly code: string | null) {
+    super(message);
+  }
+}
+
 async function parse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let msg =
@@ -30,14 +65,22 @@ async function parse<T>(res: Response): Promise<T> {
         ? "El archivo es demasiado grande para el límite configurado."
         : res.status >= 500
           ? "El servidor no pudo procesar la solicitud. Verifica que el servicio esté en funcionamiento e inténtalo de nuevo."
-          : "No pudimos completar la acción. Intenta de nuevo.";
+          : res.status === 429
+            ? "Demasiados intentos. Espera unos minutos e inténtalo de nuevo."
+            : "No pudimos completar la acción. Intenta de nuevo.";
+    let code: string | null = null;
     try {
       const body = await res.json();
-      if (typeof body.detail === "string") msg = body.detail;
+      if (typeof body.message === "string") msg = body.message;
+      else if (typeof body.detail === "string") msg = body.detail;
+      if (typeof body.code === "string") code = body.code;
     } catch {
       /* respuesta sin JSON */
     }
-    throw new Error(msg);
+    if ((res.status === 401 && code === "UNAUTHENTICATED") || code === "PASSWORD_CHANGE_REQUIRED") {
+      if (typeof window !== "undefined") window.dispatchEvent(new Event(AUTH_EVENT));
+    }
+    throw new ApiError(msg, res.status, code);
   }
   return res.json() as Promise<T>;
 }
@@ -85,7 +128,7 @@ export async function uploadBook(
   let presign: { url: string; key: string; headers: Record<string, string> } | null = null;
   let res: Response | null = null;
   try {
-    res = await fetch("/api/jobs/presign", { method: "POST", headers: json,
+    res = await apiFetch("/api/jobs/presign", { method: "POST", headers: json,
       body: JSON.stringify({ filename: file.name, size: file.size }) });
   } catch {
     res = null; // sin red hasta el backend: lo intentará el respaldo
@@ -104,7 +147,7 @@ export async function uploadBook(
       checking();
       let done: Response;
       try {
-        done = await fetch("/api/jobs/from-upload", { method: "POST", headers: json, body: JSON.stringify({
+        done = await apiFetch("/api/jobs/from-upload", { method: "POST", headers: json, body: JSON.stringify({
           key: presign.key, filename: file.name, rights_confirmed: rightsConfirmed, source_lang: "en",
           target_lang: "es", mode: opts.mode, ocr_lang: opts.ocrLang, correct_ocr: opts.correct }) });
       } catch {
@@ -124,15 +167,15 @@ export async function uploadBook(
   form.append("ocr_lang", opts.ocrLang);
   form.append("correct_ocr", String(opts.correct));
   progress(0, file.size);
-  return xhrParse(await xhrSend("POST", "/api/jobs", form, {}, progress, checking));
+  return xhrParse(await xhrSend("POST", "/api/jobs", form, apiHeaders("POST"), progress, checking));
 }
 
 export async function getJob(id: string | number): Promise<JobStatus> {
-  return parse(await fetch(`/api/jobs/${id}`, { cache: "no-store" }));
+  return parse(await apiFetch(`/api/jobs/${id}`, { cache: "no-store" }));
 }
 
 export async function jobAction(id: string | number, action: "cancel" | "resume"): Promise<JobStatus> {
-  return parse(await fetch(`/api/jobs/${id}/${action}`, { method: "POST" }));
+  return parse(await apiFetch(`/api/jobs/${id}/${action}`, { method: "POST" }));
 }
 
 export type Provider = "deepseek" | "fake";
@@ -177,12 +220,12 @@ export function methodLabel(s: Pick<TranslationSettings, "provider" | "deepseek_
 }
 
 export async function getSettings(): Promise<TranslationSettings> {
-  return parse(await fetch("/api/settings", { cache: "no-store" }));
+  return parse(await apiFetch("/api/settings", { cache: "no-store" }));
 }
 
 export async function saveSettings(changes: SettingsChanges): Promise<TranslationSettings> {
   return parse(
-    await fetch("/api/settings", {
+    await apiFetch("/api/settings", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(changes),
@@ -191,24 +234,24 @@ export async function saveSettings(changes: SettingsChanges): Promise<Translatio
 }
 
 export async function testSettings(): Promise<{ ok: boolean; provider: Provider; message: string }> {
-  return parse(await fetch("/api/settings/test", { method: "POST" }));
+  return parse(await apiFetch("/api/settings/test", { method: "POST" }));
 }
 
 export async function getHealth(): Promise<{
   translation_configured: boolean; provider: Provider; max_upload_mb: number; azw3_available: boolean;
 }> {
-  return parse(await fetch("/api/health", { cache: "no-store" }));
+  return parse(await apiFetch("/api/health", { cache: "no-store" }));
 }
 
 // ---------------------------------------------------------------- administración
 
 export async function listJobs(): Promise<JobStatus[]> {
-  return parse(await fetch("/api/jobs", { cache: "no-store" }));
+  return parse(await apiFetch("/api/jobs", { cache: "no-store" }));
 }
 
 /** Elimina el libro con todo lo suyo (páginas, traducciones, archivos, evaluaciones, glosario propio). */
 export async function deleteJob(id: number): Promise<void> {
-  await parse(await fetch(`/api/jobs/${id}`, { method: "DELETE" }));
+  await parse(await apiFetch(`/api/jobs/${id}`, { method: "DELETE" }));
 }
 
 export interface PageSummary {
@@ -265,16 +308,16 @@ export interface PageSegments {
 }
 
 export async function getSummary(id: string | number): Promise<JobSummary> {
-  return parse(await fetch(`/api/admin/jobs/${id}/summary`, { cache: "no-store" }));
+  return parse(await apiFetch(`/api/admin/jobs/${id}/summary`, { cache: "no-store" }));
 }
 
 export async function getSegments(id: string | number, page: number): Promise<PageSegments> {
-  return parse(await fetch(`/api/admin/jobs/${id}/pages/${page}/segments`, { cache: "no-store" }));
+  return parse(await apiFetch(`/api/admin/jobs/${id}/pages/${page}/segments`, { cache: "no-store" }));
 }
 
 export async function saveSegment(id: string | number, key: string, translation: string): Promise<SegmentRow> {
   return parse(
-    await fetch(`/api/admin/jobs/${id}/segments/${encodeURIComponent(key)}`, {
+    await apiFetch(`/api/admin/jobs/${id}/segments/${encodeURIComponent(key)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ translation }),
@@ -291,11 +334,11 @@ export interface BookChapter {
 }
 
 export async function listBookChapters(id: string | number): Promise<BookChapter[]> {
-  return parse(await fetch(`/api/admin/jobs/${id}/chapters`, { cache: "no-store" }));
+  return parse(await apiFetch(`/api/admin/jobs/${id}/chapters`, { cache: "no-store" }));
 }
 
 export async function recomposePage(id: string | number, page: number): Promise<JobStatus> {
-  return parse(await fetch(`/api/admin/jobs/${id}/pages/${page}/recompose`, { method: "POST" }));
+  return parse(await apiFetch(`/api/admin/jobs/${id}/pages/${page}/recompose`, { method: "POST" }));
 }
 
 export interface ProtectedTerm { id: number; term: string; category: string; origin: string; document_id: number | null }
@@ -315,31 +358,31 @@ const json = (method: string, body?: unknown): RequestInit => ({
 });
 
 export async function listTerms(documentId: number): Promise<ProtectedTerm[]> {
-  return parse(await fetch(`/api/protected-terms?document_id=${documentId}`, { cache: "no-store" }));
+  return parse(await apiFetch(`/api/protected-terms?document_id=${documentId}`, { cache: "no-store" }));
 }
 export async function addTerm(term: string, category: string, documentId: number | null): Promise<{ id: number }> {
-  return parse(await fetch("/api/protected-terms", json("POST", { term, category, document_id: documentId })));
+  return parse(await apiFetch("/api/protected-terms", json("POST", { term, category, document_id: documentId })));
 }
 export async function deleteTerm(id: number): Promise<{ ok: boolean }> {
-  return parse(await fetch(`/api/protected-terms/${id}`, json("DELETE")));
+  return parse(await apiFetch(`/api/protected-terms/${id}`, json("DELETE")));
 }
 export async function listGlossary(documentId: number): Promise<GlossaryEntry[]> {
-  return parse(await fetch(`/api/glossary?document_id=${documentId}`, { cache: "no-store" }));
+  return parse(await apiFetch(`/api/glossary?document_id=${documentId}`, { cache: "no-store" }));
 }
 export async function addGlossary(source: string, target: string, documentId: number | null): Promise<{ id: number }> {
-  return parse(await fetch("/api/glossary", json("POST", { source, target, document_id: documentId })));
+  return parse(await apiFetch("/api/glossary", json("POST", { source, target, document_id: documentId })));
 }
 export async function deleteGlossary(id: number): Promise<{ ok: boolean }> {
-  return parse(await fetch(`/api/glossary/${id}`, json("DELETE")));
+  return parse(await apiFetch(`/api/glossary/${id}`, json("DELETE")));
 }
 export async function editGlossary(id: number, patch: { target?: string; note?: string }): Promise<GlossaryEntry> {
-  return parse(await fetch(`/api/glossary/${id}`, json("PATCH", patch)));
+  return parse(await apiFetch(`/api/glossary/${id}`, json("PATCH", patch)));
 }
 export async function glossaryDiscovery(documentId: number): Promise<GlossaryDiscovery> {
-  return parse(await fetch(`/api/documents/${documentId}/glossary/discover`, { cache: "no-store" }));
+  return parse(await apiFetch(`/api/documents/${documentId}/glossary/discover`, { cache: "no-store" }));
 }
 export async function discoverGlossary(documentId: number): Promise<GlossaryDiscovery> {
-  return parse(await fetch(`/api/documents/${documentId}/glossary/discover`, json("POST")));
+  return parse(await apiFetch(`/api/documents/${documentId}/glossary/discover`, json("POST")));
 }
 
 // ------------------------------------------------------------------ Administración › Prompts y Playground
@@ -518,69 +561,69 @@ export interface RunPage {
 }
 
 export async function getPrompts(): Promise<Record<PromptTask, PromptInfo>> {
-  return parse(await fetch("/api/admin/prompts", { cache: "no-store" }));
+  return parse(await apiFetch("/api/admin/prompts", { cache: "no-store" }));
 }
 
 export async function listDrafts(): Promise<PromptDraft[]> {
-  return parse(await fetch("/api/admin/prompt-drafts", { cache: "no-store" }));
+  return parse(await apiFetch("/api/admin/prompt-drafts", { cache: "no-store" }));
 }
 
 export async function createDraft(d: Pick<PromptDraft, "task" | "name" | "text">): Promise<PromptDraft> {
-  return parse(await fetch("/api/admin/prompt-drafts", json("POST", d)));
+  return parse(await apiFetch("/api/admin/prompt-drafts", json("POST", d)));
 }
 
 export async function updateDraft(id: number, d: Partial<Pick<PromptDraft, "name" | "text">>): Promise<PromptDraft> {
-  return parse(await fetch(`/api/admin/prompt-drafts/${id}`, json("PUT", d)));
+  return parse(await apiFetch(`/api/admin/prompt-drafts/${id}`, json("PUT", d)));
 }
 
 export async function deleteDraft(id: number): Promise<void> {
-  await parse(await fetch(`/api/admin/prompt-drafts/${id}`, { method: "DELETE" }));
+  await parse(await apiFetch(`/api/admin/prompt-drafts/${id}`, { method: "DELETE" }));
 }
 
 /** Elimina el libro y todo su análisis (páginas, bloques, evaluaciones y sus PDFs). */
 export async function deletePlaygroundBook(jobId: number): Promise<void> {
-  await parse(await fetch(`/api/admin/playground/books/${jobId}`, { method: "DELETE" }));
+  await parse(await apiFetch(`/api/admin/playground/books/${jobId}`, { method: "DELETE" }));
 }
 
 export async function listPlaygroundBooks(): Promise<PlaygroundBook[]> {
-  return parse(await fetch("/api/admin/playground/books", { cache: "no-store" }));
+  return parse(await apiFetch("/api/admin/playground/books", { cache: "no-store" }));
 }
 
 export async function listChapters(jobId: number): Promise<Chapter[]> {
-  return parse(await fetch(`/api/admin/playground/books/${jobId}/chapters`, { cache: "no-store" }));
+  return parse(await apiFetch(`/api/admin/playground/books/${jobId}/chapters`, { cache: "no-store" }));
 }
 
 /** Páginas del libro para el selector de alcance: tipo (digital, scanned…) y bloques extraídos. */
 export async function listPlaygroundPages(jobId: number): Promise<PlaygroundPageInfo[]> {
-  return parse(await fetch(`/api/admin/playground/books/${jobId}/pages`, { cache: "no-store" }));
+  return parse(await apiFetch(`/api/admin/playground/books/${jobId}/pages`, { cache: "no-store" }));
 }
 
 export async function estimateRun(body: Omit<RunRequest, "chapter" | "confirm">): Promise<Estimate> {
-  return parse(await fetch("/api/admin/playground/estimate", json("POST", body)));
+  return parse(await apiFetch("/api/admin/playground/estimate", json("POST", body)));
 }
 
 export async function createRun(body: RunRequest): Promise<PlaygroundRun> {
-  return parse(await fetch("/api/admin/playground/runs", json("POST", body)));
+  return parse(await apiFetch("/api/admin/playground/runs", json("POST", body)));
 }
 
 export async function resumeRun(id: number): Promise<PlaygroundRun> {
-  return parse(await fetch(`/api/admin/playground/runs/${id}/resume`, { method: "POST" }));
+  return parse(await apiFetch(`/api/admin/playground/runs/${id}/resume`, { method: "POST" }));
 }
 
 export async function listRuns(): Promise<PlaygroundRun[]> {
-  return parse(await fetch("/api/admin/playground/runs", { cache: "no-store" }));
+  return parse(await apiFetch("/api/admin/playground/runs", { cache: "no-store" }));
 }
 
 export async function getRun(id: number): Promise<PlaygroundRun> {
-  return parse(await fetch(`/api/admin/playground/runs/${id}`, { cache: "no-store" }));
+  return parse(await apiFetch(`/api/admin/playground/runs/${id}`, { cache: "no-store" }));
 }
 
 export async function cancelRun(id: number): Promise<PlaygroundRun> {
-  return parse(await fetch(`/api/admin/playground/runs/${id}/cancel`, { method: "POST" }));
+  return parse(await apiFetch(`/api/admin/playground/runs/${id}/cancel`, { method: "POST" }));
 }
 
 export async function getRunPage(id: number, page: number): Promise<RunPage> {
-  return parse(await fetch(`/api/admin/playground/runs/${id}/pages/${page}`, { cache: "no-store" }));
+  return parse(await apiFetch(`/api/admin/playground/runs/${id}/pages/${page}`, { cache: "no-store" }));
 }
 
 /** Imagen de una página: original, producción o el PDF maquetado de una variante. v cambia al recomponer. */
@@ -593,15 +636,15 @@ export function jobPageImageUrl(jobId: number, page: number, version: "original"
 }
 
 export async function voteRunPage(id: number, page: number, vote: string | null): Promise<{ votes: Record<string, string> }> {
-  return parse(await fetch(`/api/admin/playground/runs/${id}/votes/${page}`, json("PUT", { vote })));
+  return parse(await apiFetch(`/api/admin/playground/runs/${id}/votes/${page}`, json("PUT", { vote })));
 }
 
 export async function tryVariantPage(id: number, label: string, page: number, variant: VariantInput): Promise<PlaygroundRun> {
-  return parse(await fetch(`/api/admin/playground/runs/${id}/variants/${label}/try`, json("POST", { page, variant })));
+  return parse(await apiFetch(`/api/admin/playground/runs/${id}/variants/${label}/try`, json("POST", { page, variant })));
 }
 
 export async function composeRun(id: number): Promise<PlaygroundRun> {
-  return parse(await fetch(`/api/admin/playground/runs/${id}/compose`, { method: "POST" }));
+  return parse(await apiFetch(`/api/admin/playground/runs/${id}/compose`, { method: "POST" }));
 }
 
 // ------------------------------------------------------------------ historial del playground
@@ -654,15 +697,15 @@ export interface AttemptDetail extends Omit<Attempt, "blocks"> {
 }
 
 export async function getHistoryBooks(): Promise<HistoryBook[]> {
-  return parse(await fetch("/api/admin/playground/history", { cache: "no-store" }));
+  return parse(await apiFetch("/api/admin/playground/history", { cache: "no-store" }));
 }
 
 export async function getHistory(jobId: number): Promise<{ job_id: number; book: string | null; attempts: Attempt[] }> {
-  return parse(await fetch(`/api/admin/playground/history/${jobId}`, { cache: "no-store" }));
+  return parse(await apiFetch(`/api/admin/playground/history/${jobId}`, { cache: "no-store" }));
 }
 
 export async function getAttempt(id: number): Promise<AttemptDetail> {
-  return parse(await fetch(`/api/admin/playground/attempts/${id}`, { cache: "no-store" }));
+  return parse(await apiFetch(`/api/admin/playground/attempts/${id}`, { cache: "no-store" }));
 }
 
 export function attemptImageUrl(id: number, page: number, dpi = 110): string {
@@ -674,4 +717,77 @@ export function fmtUsd(v: number | null | undefined): string {
   if (v === null || v === undefined) return "sin tarifa";
   if (v === 0) return "$0";
   return v < 0.01 ? `≈$${v.toFixed(4)}` : `≈$${v.toFixed(2)}`;
+}
+
+// ---------------------------------------------------------------- login y cuentas
+
+export type Role = "admin" | "user";
+
+export interface AuthUser {
+  id: number;
+  email: string;
+  name: string;
+  role: Role;
+  active: boolean;
+  must_change_password: boolean;
+  temp_password_expires_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface AuthState {
+  user: AuthUser;
+  csrf_token: string;
+  session: {
+    kind: "normal" | "restricted"; // restricted: solo puede cambiar la contraseña temporal
+    expires_at: string;
+    idle_timeout_minutes: number;
+    reauth_until: string | null;
+  };
+}
+
+const jsonBody = (method: string, body: unknown): RequestInit => ({
+  method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+});
+
+/** Sesión actual, o null si no hay (sin avisar a AUTH_EVENT: es la propia consulta del proveedor). */
+export async function getMe(): Promise<AuthState | null> {
+  const res = await apiFetch("/api/auth/me", { cache: "no-store" });
+  if (res.status === 401) return null;
+  return parse(res);
+}
+
+export async function login(email: string, password: string): Promise<AuthState> {
+  return parse(await apiFetch("/api/auth/login", jsonBody("POST", { email, password })));
+}
+
+export async function logout(): Promise<void> {
+  await parse(await apiFetch("/api/auth/logout", { method: "POST" }));
+}
+
+export async function changePassword(current_password: string, new_password: string): Promise<AuthState> {
+  return parse(await apiFetch("/api/auth/change-password", jsonBody("POST", { current_password, new_password })));
+}
+
+export async function reauthenticate(password: string): Promise<AuthState> {
+  return parse(await apiFetch("/api/auth/reauthenticate", jsonBody("POST", { password })));
+}
+
+export interface UserPage { items: AuthUser[]; total: number; page: number; page_size: number }
+export interface TempPassword { user: AuthUser; temporary_password: string }
+
+export async function listUsers(page = 1, pageSize = 50): Promise<UserPage> {
+  return parse(await apiFetch(`/api/users?page=${page}&page_size=${pageSize}`, { cache: "no-store" }));
+}
+
+export async function createUser(body: { email: string; name: string; role: Role }): Promise<TempPassword> {
+  return parse(await apiFetch("/api/users", jsonBody("POST", body)));
+}
+
+export async function updateUser(id: number, patch: { name?: string; role?: Role; active?: boolean }): Promise<AuthUser> {
+  return parse(await apiFetch(`/api/users/${id}`, jsonBody("PATCH", patch)));
+}
+
+export async function resetUserPassword(id: number): Promise<TempPassword> {
+  return parse(await apiFetch(`/api/users/${id}/reset-password`, { method: "POST" }));
 }

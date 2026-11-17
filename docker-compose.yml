@@ -50,6 +50,9 @@ services:
       context: ./frontend
       args:
         BACKEND_URL: http://api:8000
+    environment:
+      # CSP de las páginas (frontend/proxy.ts): el navegador sube los libros con PUT directo a este origen S3
+      CSP_CONNECT_SRC: ${S3_PUBLIC_ENDPOINT:-http://localhost:${S3_PORT:-8333}}
     ports:
       - "${WEB_PORT:-3000}:3000"
     restart: unless-stopped

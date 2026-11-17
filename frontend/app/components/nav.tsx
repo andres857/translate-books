@@ -5,15 +5,20 @@ import { Fragment, useEffect, useState, type ComponentType, type SVGProps } from
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { getSettings, methodLabel, SETTINGS_EVENT } from "@/lib/api";
-import { IconBook, IconChevron, IconCloud, IconFlask, IconHistory, IconLayers, IconSettings, IconText } from "./art";
+import { useAuth } from "@/lib/auth";
+import {
+  IconBook, IconChevron, IconCloud, IconFlask, IconHistory, IconKey, IconLayers, IconLogout, IconSettings, IconText,
+  IconUsers,
+} from "./art";
 
 type Item = {
   href: string; label: string; short: string; Icon: ComponentType<SVGProps<SVGSVGElement>>; match: (p: string) => boolean;
   children?: Item[]; // subitems, sangrados debajo del item
 };
 
-// dos secciones: Libros (la vista principal) arriba y Administración debajo; Prompts e Historial cuelgan de Playground
-const SECTIONS: { id: string; title: string; items: Item[] }[] = [
+// dos secciones: Libros (la vista principal) arriba y Administración debajo (solo admin; el servidor también
+// lo exige); Prompts e Historial cuelgan de Playground
+const SECTIONS: { id: string; title: string; adminOnly?: boolean; items: Item[] }[] = [
   {
     id: "books",
     title: "Libros",
@@ -25,6 +30,7 @@ const SECTIONS: { id: string; title: string; items: Item[] }[] = [
   {
     id: "admin",
     title: "Administración",
+    adminOnly: true,
     items: [
       { href: "/admin/playground", label: "Playground", short: "Probar", Icon: IconFlask,
         match: (p) => p.startsWith("/admin/playground") && !p.startsWith("/admin/playground/history"),
@@ -36,6 +42,8 @@ const SECTIONS: { id: string; title: string; items: Item[] }[] = [
         ] },
       { href: "/admin/settings", label: "Configuración", short: "Ajustes", Icon: IconSettings,
         match: (p) => p.startsWith("/admin/settings") || p.startsWith("/settings") },
+      { href: "/admin/users", label: "Usuarios", short: "Usuarios", Icon: IconUsers,
+        match: (p) => p.startsWith("/admin/users") },
     ],
   },
 ];
@@ -53,6 +61,7 @@ function NavLink({ item, on }: { item: Item; on: boolean }) {
 
 export function SideNav() {
   const pathname = usePathname() ?? "/";
+  const { state, isAdmin, signOut } = useAuth();
   const [open, setOpen] = useState<Record<string, boolean>>({ books: true, admin: true });
   const [method, setMethod] = useState<{ label: string; provider: string } | null>(null);
 
@@ -73,7 +82,7 @@ export function SideNav() {
         <span>AstroBooks</span>
       </Link>
       <div className="sidenav-body">
-        {SECTIONS.map((sec) => {
+        {SECTIONS.filter((sec) => isAdmin || !sec.adminOnly).map((sec) => {
           const expanded = open[sec.id] !== false;
           return (
             <section key={sec.id} className="sidenav-section" aria-labelledby={`nav-${sec.id}`}>
@@ -105,13 +114,38 @@ export function SideNav() {
           );
         })}
       </div>
-      <Link href="/admin/settings" className="sidenav-foot" title="Método de traducción activo">
-        <span className="sidenav-icon"><IconCloud width={16} height={16} /></span>
-        <span className="sidenav-text">
-          <span className="sidenav-caption">Método activo</span>
-          {method?.label ?? "Sin conexión con el servidor"}
-        </span>
-      </Link>
+      {isAdmin ? (
+        <Link href="/admin/settings" className="sidenav-foot" title="Método de traducción activo">
+          <span className="sidenav-icon"><IconCloud width={16} height={16} /></span>
+          <span className="sidenav-text">
+            <span className="sidenav-caption">Método activo</span>
+            {method?.label ?? "Sin conexión con el servidor"}
+          </span>
+        </Link>
+      ) : (
+        <div className="sidenav-foot" title="Método de traducción activo">
+          <span className="sidenav-icon"><IconCloud width={16} height={16} /></span>
+          <span className="sidenav-text">
+            <span className="sidenav-caption">Método activo</span>
+            {method?.label ?? "Sin conexión con el servidor"}
+          </span>
+        </div>
+      )}
+      {state && (
+        <div className="sidenav-account" aria-label="Tu cuenta">
+          <span className="sidenav-text">
+            <span className="sidenav-caption">{isAdmin ? "Administrador" : "Usuario"}</span>
+            <span className="sidenav-account-name" title={state.user.email}>{state.user.name}</span>
+          </span>
+          <Link href="/change-password" className="btn ghost" title="Cambiar contraseña" aria-label="Cambiar contraseña">
+            <IconKey />
+          </Link>
+          <button type="button" className="btn ghost" title="Cerrar sesión" aria-label="Cerrar sesión"
+            onClick={() => void signOut()}>
+            <IconLogout />
+          </button>
+        </div>
+      )}
     </nav>
   );
 }

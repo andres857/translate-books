@@ -5,6 +5,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { deleteJob, getSettings, listJobs, methodLabel, type JobStatus } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { UploadBook } from "./components/upload-book";
 import { IconTrash, IconUpload, IconWarn, IconX } from "./components/art";
 
@@ -23,6 +24,9 @@ const bookName = (j: JobStatus) => j.title_es || j.original_name.replace(/\.pdf$
 const fold = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
 export default function BooksPage() {
+  const { isAdmin } = useAuth();
+  // la vista de revisión (/admin/jobs) es de administración; un usuario abre la página de su libro
+  const openHref = (j: JobStatus) => (isAdmin ? `/admin/jobs/${j.id}` : `/jobs/${j.id}`);
   const [jobs, setJobs] = useState<JobStatus[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [method, setMethod] = useState<string | null>(null);
@@ -95,11 +99,12 @@ export default function BooksPage() {
           <p>Libros subidos: traducción, comparación con el original, correcciones y glosario.</p>
         </div>
         <div className="row">
-          {method && (
+          {method && isAdmin && (
             <Link className="btn ghost" href="/admin/settings" title="Cambiar el método de traducción">
               Método: {method}
             </Link>
           )}
+          {method && !isAdmin && <span className="muted">Método: {method}</span>}
           {!uploading && (
             <button type="button" className="btn" onClick={() => setUploading(true)}>
               <IconUpload /> Subir un libro
@@ -147,7 +152,7 @@ export default function BooksPage() {
                     <tr>
                       <td className="num">{j.id}</td>
                       <td className="wrap">
-                        <Link href={`/admin/jobs/${j.id}`}>{bookName(j)}</Link>
+                        <Link href={openHref(j)}>{bookName(j)}</Link>
                         {j.title_es && <div className="muted">{j.original_name}</div>}
                       </td>
                       <td>{MODE[j.mode] ?? "Traducción"}</td>
@@ -160,14 +165,14 @@ export default function BooksPage() {
                       <td className="num">{j.status === "done" ? j.review_pages.length : "—"}</td>
                       <td>
                         <div className="row">
-                          <Link className="btn secondary" href={`/admin/jobs/${j.id}`}>Abrir</Link>
-                          {j.status !== "done" && <Link className="btn ghost" href={`/jobs/${j.id}`}>Progreso</Link>}
-                          <button type="button" className="btn ghost book-del" aria-label={`Eliminar ${bookName(j)}`}
+                          <Link className="btn secondary" href={openHref(j)}>Abrir</Link>
+                          {j.status !== "done" && isAdmin && <Link className="btn ghost" href={`/jobs/${j.id}`}>Progreso</Link>}
+                          {isAdmin && <button type="button" className="btn ghost book-del" aria-label={`Eliminar ${bookName(j)}`}
                             aria-expanded={confirm === j.id} disabled={busy(j)}
                             title={busy(j) ? "Detén el proceso antes de eliminarlo" : "Eliminar"}
                             onClick={() => askDelete(j.id)}>
                             <IconTrash />
-                          </button>
+                          </button>}
                         </div>
                       </td>
                     </tr>

@@ -17,14 +17,14 @@ def ctx(tmp_path_factory):
     from app.cli import migrate
 
     migrate()
-    from fastapi.testclient import TestClient
+    from .conftest import admin_client
 
     from app.main import app
     from app.storage import get_storage
 
     fake = FakeStorage()
     app.dependency_overrides[get_storage] = lambda: fake
-    yield TestClient(app), fake
+    yield admin_client(app), fake
     app.dependency_overrides.pop(get_storage, None)
 
 
@@ -69,11 +69,13 @@ def test_from_upload_rejects_foreign_key(ctx):
     client, _ = ctx
     assert client.post("/api/jobs/from-upload", json=_payload("files/2026/01/x.pdf")).status_code == 400
     assert client.post("/api/jobs/from-upload", json=_payload("books/incoming/../x.pdf")).status_code == 400
+    # la carpeta temporal de otro usuario tampoco vale
+    assert client.post("/api/jobs/from-upload", json=_payload("books/incoming/u999999/2026/01/x.pdf")).status_code == 400
 
 
 def test_from_upload_missing_object(ctx):
     client, _ = ctx
-    r = client.post("/api/jobs/from-upload", json=_payload("books/incoming/2026/01/nada.pdf"))
+    r = client.post("/api/jobs/from-upload", json=_payload(f"books/incoming/u{client.user.id}/2026/01/nada.pdf"))
     assert r.status_code == 400 and "subido" in r.json()["detail"]
 
 

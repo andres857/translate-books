@@ -272,11 +272,11 @@ def test_detect_chapters_scanned_ocr(db):
 
 
 def test_book_pages_endpoint(db, book):
-    from fastapi.testclient import TestClient
+    from .conftest import admin_client
 
     from app.main import app
 
-    c = TestClient(app)
+    c = admin_client(app)
     r = c.get(f"/api/admin/playground/books/{book}/pages")
     assert r.status_code == 200, r.text
     assert r.json() == [{"number": n, "kind": "digital", "blocks": 2} for n in (1, 2, 3)]
@@ -312,11 +312,11 @@ def test_correct_task_on_digitized_book(db, monkeypatch):
 
 
 def test_api(db, book, monkeypatch):
-    from fastapi.testclient import TestClient
+    from .conftest import admin_client
 
     from app.main import app
 
-    c = TestClient(app)
+    c = admin_client(app)
     assert set(c.get("/api/admin/prompts").json()) == {"translate", "correct", "shorten", "names", "glossary"}
     d = c.post("/api/admin/prompt-drafts", json={"task": "translate", "name": "Más literal", "text": "P1"}).json()
     assert c.put(f"/api/admin/prompt-drafts/{d['id']}", json={"text": "P2"}).json()["text"] == "P2"
@@ -360,7 +360,7 @@ def test_api(db, book, monkeypatch):
 
 
 def test_delete_book_removes_analysis_in_cascade(db, book, tmp_path, monkeypatch):
-    from fastapi.testclient import TestClient
+    from .conftest import admin_client
 
     from app.db.models import (Document, GlossaryEntry, Job, Page, PlaygroundAttempt, PlaygroundRun, ProtectedTerm,
                                Segment)
@@ -384,7 +384,7 @@ def test_delete_book_removes_analysis_in_cascade(db, book, tmp_path, monkeypatch
     (outputs / "playground" / f"run_{run_id}").mkdir(parents=True)
     (outputs / f"job_{book}").mkdir(parents=True)
 
-    c = TestClient(app)
+    c = admin_client(app)
     with db() as s:  # con una evaluación en curso no se borra
         s.get(PlaygroundRun, run_id).status = "running"
         s.commit()
@@ -409,7 +409,7 @@ def test_delete_book_removes_analysis_in_cascade(db, book, tmp_path, monkeypatch
 
 
 def test_glossary_auto_entries_review_and_effective_glossary(db, book):
-    from fastapi.testclient import TestClient
+    from .conftest import admin_client
 
     from app.db.models import GlossaryEntry, Job
     from app.glossary_service import effective_glossary, save_auto, source_job
@@ -431,7 +431,7 @@ def test_glossary_auto_entries_review_and_effective_glossary(db, book):
         doc_id = doc.id
         auto_id = s.query(GlossaryEntry).filter_by(document_id=doc_id, origin="auto").one().id
 
-    c = TestClient(app)
+    c = admin_client(app)
     rows = {r["source"]: r for r in c.get(f"/api/glossary?document_id={doc_id}").json()}
     assert rows["Co-rules"]["origin"] == "auto" and rows["Co-rules"]["note"] == "compartida"
     r = c.patch(f"/api/glossary/{auto_id}", json={"target": "Corregente"}).json()
@@ -476,14 +476,14 @@ def test_prepare_generates_glossary_and_tolerates_failure(db, book, monkeypatch)
 
 
 def test_delete_job_endpoint_refuses_active_and_removes_book(db, book, tmp_path, monkeypatch):
-    from fastapi.testclient import TestClient
+    from .conftest import admin_client
 
     from app.db.models import Document, Job
     from app.main import app
 
     monkeypatch.setattr(pg, "get_settings", lambda: type("S", (), {"outputs_dir": tmp_path / "o",
                                                                     "uploads_dir": tmp_path / "u"})())
-    c = TestClient(app)
+    c = admin_client(app)
     with db() as s:
         job = s.get(Job, book)
         doc_id, job.status = job.document_id, "running"
@@ -500,7 +500,7 @@ def test_delete_job_endpoint_refuses_active_and_removes_book(db, book, tmp_path,
 
 def test_book_view_chapters_titles_review_and_info(db):
     """Vista Libro: índice con títulos traducidos y autor/subtítulo de la cabecera."""
-    from fastapi.testclient import TestClient
+    from .conftest import admin_client
 
     from app.db.models import Document, Job, Page, Segment
     from app.main import app
@@ -527,7 +527,7 @@ def test_book_view_chapters_titles_review_and_info(db):
         jid = job.id
     assert [c["title_es"] for c in out] == ["EN EL PRINCIPIO", "Aries", None]
 
-    c = TestClient(app)
+    c = admin_client(app)
     info = c.get(f"/api/admin/jobs/{jid}/summary").json()["book"]
     assert (info["title"], info["subtitle"], info["author"]) == ("El libro", "Una guía completa", "Carole Taylor")
     assert c.get(f"/api/admin/jobs/{jid}/chapters").status_code == 200  # sin PDF: capítulos detectados o []

@@ -70,14 +70,14 @@ def app_client(tmp_path_factory):
     from app.cli import migrate
 
     migrate()
-    from fastapi.testclient import TestClient
+    from .conftest import admin_client
 
     from app.main import app
     from app.storage import get_storage
 
     fake = FakeStorage()
     app.dependency_overrides[get_storage] = lambda: fake
-    yield TestClient(app), fake
+    yield admin_client(app), fake
     app.dependency_overrides.pop(get_storage, None)
     os.environ.pop("UPLOAD_MAX_SIZE_MB")
     get_storage_settings.cache_clear()

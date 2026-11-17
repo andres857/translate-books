@@ -172,7 +172,7 @@ h3 { font-size: var(--font-size-300); line-height: var(--font-line-height-6); fo
 .form-grid { display: grid; gap: var(--space-9); grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); align-items: end; }
 .form-grid > .full { grid-column: 1 / -1; }
 label.control { display: grid; gap: var(--space-3); font-size: var(--font-size-200); line-height: var(--font-line-height-5); font-weight: var(--font-weight-500); color: var(--color-palette-6); }
-input[type="text"], input[type="search"], input[type="password"], input[type="number"], input:not([type]), select, textarea {
+input[type="text"], input[type="search"], input[type="email"], input[type="password"], input[type="number"], input:not([type]), select, textarea {
   width: 100%; min-height: var(--layout-control); padding: 0 var(--space-5);
   background: var(--color-surface); color: var(--color-palette-2);
   border: var(--layout-line) solid var(--color-palette-13); border-radius: var(--radius-2);
@@ -922,3 +922,25 @@ td .badge { margin-left: var(--space-4); }
 .btn.danger { background: var(--color-danger); border-color: var(--color-danger); color: var(--color-surface); }
 .btn.danger:not(:disabled):hover { background: var(--color-danger); border-color: var(--color-danger); filter: brightness(0.92); }
 .upload-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-5); }
+
+/* ---------- login, cambio de contraseña y usuarios */
+:root { --layout-auth: 400px; } /* ancho de la tarjeta de entrada */
+.auth-screen { min-height: 100vh; display: grid; place-items: center; padding: var(--space-12); background: var(--color-palette-17); }
+.auth-card { width: min(100%, var(--layout-auth)); }
+.auth-card h1 { font-size: var(--font-size-500); line-height: var(--font-line-height-9); font-weight: var(--font-weight-600); }
+.auth-card .stack { gap: var(--space-7); }
+.auth-submit { height: var(--layout-btn-lg); }
+main.auth-page { max-width: var(--layout-upload); }
+.sidenav-account {
+  display: flex; align-items: center; gap: var(--space-3);
+  margin: 0 var(--space-6) var(--space-6); padding: var(--space-3) var(--space-3) var(--space-3) var(--space-6);
+  border-top: var(--layout-line) solid var(--color-palette-15);
+}
+.sidenav-account-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-palette-2); font-weight: var(--font-weight-500); }
+.temp-pass { gap: var(--space-5); }
+.temp-pass-value { justify-self: start; font-size: var(--font-size-400); line-height: var(--font-line-height-7); padding: var(--space-3) var(--space-5); user-select: all; letter-spacing: var(--font-letter-spacing-2); }
+.users-reauth { min-width: min(100%, var(--layout-dialog-side)); }
+@media (max-width: 700px) {
+  .sidenav-account { margin: 0; border-top: 0; padding: var(--space-3); }
+  .sidenav-account .sidenav-text { display: none; }
+}

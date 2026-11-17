@@ -70,3 +70,67 @@ def build_sample_pdf(path: Path) -> Path:
 @pytest.fixture(scope="session")
 def sample_pdf() -> Path:
     return build_sample_pdf(OUT / "sample.pdf")
+
+
+# ---- login: usuarios y clientes autenticados para las pruebas de la API
+
+TEST_PASSWORD = "contraseña-de-prueba-12"
+
+
+def make_user(role: str = "user", *, email: str | None = None, password: str = TEST_PASSWORD,
+              must_change: bool = False, active: bool = True):
+    """Crea una cuenta directamente en BD (correo único por llamada: la BD de pruebas se conserva)."""
+    import uuid
+
+    from app.auth import passwords
+    from app.db.models import User
+    from app.db.session import session_scope
+
+    with session_scope() as db:
+        u = User(email=email or f"{role}-{uuid.uuid4().hex[:10]}@example.com", name=f"Prueba {role}", role=role,
+                 password_hash=passwords.hash_password(password), must_change_password=must_change, active=active)
+        db.add(u)
+        db.flush()
+        db.expunge(u)
+    return u
+
+
+def login_headers(client, token: str):
+    from app.auth import sessions
+    from app.config import get_settings
+
+    client.cookies.set(sessions.cookie_name(), token)
+    client.headers.update({"Origin": get_settings().allowed_origins[0], "X-Requested-With": "traductor",
+                           "X-CSRF-Token": sessions.csrf_for(token)})
+    return client
+
+
+def session_for(user, kind: str = "normal", reauth: bool = False) -> str:
+    """Abre una sesión para `user` sin pasar por el login (y opcionalmente con reautenticación reciente)."""
+    from starlette.requests import Request
+
+    from app.auth import sessions
+    from app.db.models import User
+    from app.db.session import session_scope
+
+    req = Request({"type": "http", "headers": [], "client": ("127.0.0.1", 1)})
+    with session_scope() as db:
+        s, token = sessions.create(db, db.get(User, user.id), kind, req)
+        if reauth:
+            s.reauth_at = sessions.now()
+    return token
+
+
+def auth_client(app, role: str = "admin", *, user=None, reauth: bool = False):
+    """TestClient con cookie de sesión, Origin, X-Requested-With y CSRF. `client.user` es la cuenta."""
+    from fastapi.testclient import TestClient
+
+    user = user or make_user(role)
+    c = TestClient(app)
+    login_headers(c, session_for(user, reauth=reauth))
+    c.user = user
+    return c
+
+
+def admin_client(app):
+    return auth_client(app, "admin")

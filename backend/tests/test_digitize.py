@@ -118,12 +118,12 @@ def test_digitize_job_via_api(tmp_path, monkeypatch):
     from app.cli import migrate
 
     migrate()
-    from fastapi.testclient import TestClient
+    from .conftest import admin_client
 
     from app import worker
     from app.main import app
 
-    c = TestClient(app)
+    c = admin_client(app)
     while worker.claim_job():  # la BD de pruebas es compartida: no dejar trabajos en cola de otras pruebas
         pass
     data = scanned_pdf(tmp_path / "s.pdf").read_bytes()

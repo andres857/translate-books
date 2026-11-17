@@ -37,7 +37,8 @@ Usa `timeout` largo (hasta 600000 ms): el build de Next tarda.
 Reiniciar `worker` interrumpe una traducción en marcha. Comprueba primero:
 
 ```bash
-curl -s localhost:8000/api/jobs | python3 -c "import json,sys; a=[j for j in json.load(sys.stdin) if j['status'] not in ('done','failed','error','cancelled','canceled')]; print(a and [(j['id'],j['status'],j['stage']) for j in a] or 'sin trabajos activos')"
+# la API exige sesión: se consulta la BD desde el contenedor
+docker compose exec -T api python -m app.cli active-jobs
 ```
 
 Si hay trabajos activos, no reinicies `worker` sin preguntar al usuario (el frontend sí se puede reconstruir).
@@ -47,7 +48,8 @@ Si hay trabajos activos, no reinicies `worker` sin preguntar al usuario (el fron
 ```bash
 docker compose ps
 curl -fsS localhost:8000/api/health
-css=$(curl -s localhost:3100/ | grep -o '/_next/static/[^"]*\.css' | head -1); curl -s "localhost:3100$css" | grep -c '<selector o variable nueva>'
+# sin sesión "/" redirige al login; /login sirve el mismo CSS
+css=$(curl -s localhost:3100/login | grep -o '/_next/static/[^"]*\.css' | head -1); curl -s "localhost:3100$css" | grep -c '<selector o variable nueva>'
 ```
 
 Busca en el CSS/JS servido algo concreto que introdujo el cambio (una variable, un selector, un texto).

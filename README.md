@@ -91,9 +91,30 @@ figuras y texto fluido; sirve para copiarlo al Kindle por USB. Requiere Calibre 
 (`sudo apt install calibre`; la imagen de Docker ya lo incluye, unos 400 MB más). Sin Calibre el botón se
 desactiva y el resto de descargas sigue igual. CLI: `python -m app.cli epub <job_id> --azw3`.
 
+## Acceso: login, roles y recuperación
+
+La aplicación pide correo y contraseña. No hay autorregistro: las cuentas las crea un administrador.
+
+- **Primer arranque**: define `ADMIN_BOOTSTRAP_EMAIL` y `ADMIN_BOOTSTRAP_PASSWORD` (≥ 12 caracteres) en `.env`.
+  El api crea ese admin una sola vez (si el correo ya existe no toca nada) y pide cambiar la contraseña en el
+  primer login.
+- **Roles**: `user` ve y sube **sus** libros, sigue el progreso, descarga, cancela y reanuda. `admin` ve todos
+  los libros y además borra, revisa (`/admin/jobs/…`), usa el Playground y Prompts, cambia la Configuración y
+  gestiona cuentas en **Administración › Usuarios**. Los libros subidos antes del login solo los ve el admin.
+- **Cuentas**: el alta y el reset generan una contraseña temporal que se muestra una sola vez, vence a las 24 h
+  y obliga a cambiarla. Cambiar rol, desactivar o resetear cierra las sesiones de esa cuenta. Las escrituras
+  en Usuarios piden confirmar la contraseña del admin (10 min). Siempre queda al menos un admin activo.
+- **Sesión**: cookie `HttpOnly`/`SameSite=Strict` (`Secure` y prefijo `__Host-` fuera de `http://localhost`),
+  8 h como máximo y 30 min de inactividad. Toda escritura exige `Origin` exacto (`CORS_ORIGINS`), el encabezado
+  `X-Requested-With: traductor` y el token CSRF de la sesión. Hay límite de intentos de login (429 +
+  `Retry-After`).
+- **Recuperación** (sin acceso de admin):
+  `docker compose exec api python -m app.cli auth-recover --email tu@correo` crea o reactiva la cuenta como
+  admin y muestra una contraseña temporal nueva.
+
 ## Administración (`/admin`)
 
-Sin inicio de sesión (pensado para uso local). Lista los libros y, por libro:
+Solo para administradores. Lista los libros y, por libro:
 
 - **Resumen**: páginas correctas y para revisar, validaciones del libro y tabla de páginas con sus motivos.
 - **Comparar**: original y resultado lado a lado, con zoom y desplazamiento conjunto, y el texto por bloque
@@ -121,6 +142,9 @@ Los estilos de toda la interfaz salen de `handoff/tokens.css` (copiado a `fronte
 | `FAKE_TRANSLATOR` | `true` para probar sin API. |
 | `WEB_PORT` / `API_PORT` | Puertos publicados por `docker compose` (3000 / 8000). |
 | `APP_UID` / `APP_GID` | Usuario con el que corren los contenedores (dueño de `data/`). |
+| `CORS_ORIGINS` | Origen exacto del navegador (`http://localhost:WEB_PORT`): CORS y comprobación de `Origin` en escrituras. |
+| `ADMIN_BOOTSTRAP_EMAIL` / `ADMIN_BOOTSTRAP_PASSWORD` / `ADMIN_BOOTSTRAP_NAME` | Admin inicial (ver «Acceso»). |
+| `SESSION_MAX_HOURS` / `SESSION_IDLE_MINUTES` / `COOKIE_SECURE` | Duración de la sesión y cookie `Secure` (`auto`, `true`, `false`). |
 | `EBOOK_CONVERT_BIN` | Ruta de `ebook-convert` (Calibre) si no está en el `PATH`. |
 
 ## Almacenamiento de archivos (S3 + CDN)

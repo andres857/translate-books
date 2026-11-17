@@ -61,7 +61,7 @@ def book_info(job: Job) -> dict:
 
 @router.get("/jobs/{job_id}/summary")
 def summary(job_id: int, db: Session = Depends(get_db)):
-    job = _job_or_404(db, job_id)
+    job = _job_or_404(db, job_id, None)  # router solo admin
     report = _report(job)
     pages = []
     for p in db.scalars(select(Page).where(Page.job_id == job_id).order_by(Page.number)):
@@ -95,7 +95,7 @@ def _page_or_404(db: Session, job_id: int, number: int) -> Page:
 
 @router.get("/jobs/{job_id}/pages/{number}/segments")
 def page_segments(job_id: int, number: int, db: Session = Depends(get_db)):
-    _job_or_404(db, job_id)
+    _job_or_404(db, job_id, None)  # router solo admin
     page = _page_or_404(db, job_id, number)
     return {"number": page.number, "width": page.width, "height": page.height, "kind": page.kind,
             "needs_review": page.needs_review, "reasons": page.review_reasons or [],
@@ -105,7 +105,7 @@ def page_segments(job_id: int, number: int, db: Session = Depends(get_db)):
 @router.get("/jobs/{job_id}/chapters")
 def chapters(job_id: int, db: Session = Depends(get_db)):
     """Índice del libro (capítulos y secciones) con el título traducido de cada uno cuando se encuentra."""
-    job = _job_or_404(db, job_id)
+    job = _job_or_404(db, job_id, None)  # router solo admin
     return pg.translate_titles(db, job, pg.book_chapters(db, job))
 
 
@@ -116,7 +116,7 @@ class SegmentEdit(BaseModel):
 @router.put("/jobs/{job_id}/segments/{seg_key}")
 def edit_segment(job_id: int, seg_key: str, body: SegmentEdit, db: Session = Depends(get_db)):
     """Guarda una traducción corregida a mano. No recompone: eso se pide aparte, por página."""
-    job = _job_or_404(db, job_id)
+    job = _job_or_404(db, job_id, None)  # router solo admin
     if (job.options or {}).get("mode") == "digitize":
         raise HTTPException(400, "Los libros digitalizados no tienen traducción que corregir.")
     seg = db.scalars(select(Segment).join(Page).where(Page.job_id == job_id, Segment.seg_key == seg_key)).first()
@@ -138,7 +138,7 @@ def edit_segment(job_id: int, seg_key: str, body: SegmentEdit, db: Session = Dep
 @router.post("/jobs/{job_id}/pages/{number}/recompose")
 def recompose(job_id: int, number: int, db: Session = Depends(get_db)):
     """Encola la recomposición de una página; la ejecuta el worker."""
-    job = _job_or_404(db, job_id)
+    job = _job_or_404(db, job_id, None)  # router solo admin
     options = dict(job.options or {})
     if options.get("mode") == "digitize":
         raise HTTPException(400, "Los libros digitalizados no se recomponen.")

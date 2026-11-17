@@ -50,6 +50,8 @@ class Job(Base):
     error: Mapped[str | None] = mapped_column(Text)
     output_path: Mapped[str | None] = mapped_column(String(1024))
     report_path: Mapped[str | None] = mapped_column(String(1024))
+    # quién subió el libro; NULL = trabajos anteriores al login (solo los ve el admin)
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -208,4 +210,64 @@ class StoredFile(Base):
     content_type: Mapped[str] = mapped_column(String(128))
     size: Mapped[int] = mapped_column(Integer)
     private: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class User(Base):
+    """Cuenta de acceso. La contraseña solo se guarda como hash Argon2id."""
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(254), unique=True)  # siempre en minúsculas
+    name: Mapped[str] = mapped_column(String(120))
+    role: Mapped[str] = mapped_column(String(16), default="user")  # admin | user
+    password_hash: Mapped[str] = mapped_column(String(255))
+    # contraseña temporal (alta, reset o bootstrap): obliga a cambiarla y vence
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=True)
+    temp_password_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class AuthSession(Base):
+    """Sesión opaca: el navegador guarda el token; aquí solo su SHA-256 (y el del CSRF)."""
+    __tablename__ = "auth_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    csrf_hash: Mapped[str] = mapped_column(String(64))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(16), default="normal")  # normal | restricted (cambio obligatorio)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    reauth_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ip: Mapped[str | None] = mapped_column(String(64))
+    user_agent: Mapped[str | None] = mapped_column(String(256))
+
+    user: Mapped[User] = relationship()
+
+
+class AuthRateLimit(Base):
+    """Contador de intentos de login por ventana fija (por IP, por correo y total)."""
+    __tablename__ = "auth_rate_limits"
+
+    bucket: Mapped[str] = mapped_column(String(96), primary_key=True)
+    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class AuthSecurityEvent(Base):
+    """Bitácora de seguridad. Nunca guarda contraseñas, tokens ni CSRF."""
+    __tablename__ = "auth_security_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    type: Mapped[str] = mapped_column(String(48), index=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    actor_id: Mapped[int | None] = mapped_column(Integer)
+    ip: Mapped[str | None] = mapped_column(String(64))
+    detail: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

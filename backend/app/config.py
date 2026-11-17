@@ -20,7 +20,23 @@ class Settings(BaseSettings):
 
     # traductor falso (sin API) para probar la maquetación y la interfaz sin gastar tokens
     fake_translator: bool = False
+    # orígenes exactos del navegador: CORS y validación de Origin en escrituras (separados por comas)
     cors_origins: str = "http://localhost:3000"
+
+    # ---- login (ver app/auth). El admin inicial se crea una sola vez si su correo no existe.
+    admin_bootstrap_email: str = ""
+    admin_bootstrap_password: str = ""
+    admin_bootstrap_name: str = "Administrador"
+    session_max_hours: float = 8
+    session_idle_minutes: float = 30
+    reauth_minutes: float = 10
+    temp_password_hours: float = 24
+    # auto = Secure salvo que todos los orígenes sean http://localhost (desarrollo)
+    cookie_secure: str = "auto"
+    login_window_minutes: float = 15
+    login_max_per_ip: int = 10
+    login_max_per_email: int = 10
+    login_max_global: int = 200
 
     max_upload_mb: int = 200
     translation_concurrency: int = 10
@@ -33,6 +49,18 @@ class Settings(BaseSettings):
 
     # Directorios de fuentes separados por ':' o ';'
     fonts_dirs: str = "./fonts"
+
+    @property
+    def allowed_origins(self) -> list[str]:
+        return [o.strip().rstrip("/") for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def secure_cookies(self) -> bool:
+        if self.cookie_secure.lower() in ("true", "1", "yes"):
+            return True
+        if self.cookie_secure.lower() in ("false", "0", "no"):
+            return False
+        return not all(o.startswith(("http://localhost", "http://127.0.0.1")) for o in self.allowed_origins)
 
     @property
     def uploads_dir(self) -> Path:

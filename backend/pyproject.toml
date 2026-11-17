@@ -22,6 +22,7 @@ dependencies = [
   "opencv-python-headless",
   "numpy",
   "boto3",
+  "argon2-cffi",
 ]
 
 [project.optional-dependencies]

@@ -13,8 +13,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.storage_errors import storage_call
+from app.auth import sessions as auth_sessions
+from app.auth.deps import Principal, require_admin, require_user
 from app.config import get_settings
-from app.db.models import Document, Job, Page
+from app.db.models import AuthSession, Document, Job, Page
 from app.db.session import SessionLocal, get_db
 from app.pipeline.azw3 import Azw3Unavailable, azw3_path_for, build_azw3, ebook_convert_available
 from app.pipeline.digitize import ocrmypdf_available
@@ -36,11 +38,18 @@ PREPARE_STAGES = [("upload", "Carga"), ("analyze", "Análisis"), ("ocr", "OCR"),
                   ("glossary", "Glosario"), ("done", "Listo para evaluar")]
 
 
-def _job_or_404(db: Session, job_id: int) -> Job:
+def _job_or_404(db: Session, job_id: int, p: Principal | None) -> Job:
+    """El trabajo si existe y el usuario puede verlo (el admin ve todos; un user solo los suyos).
+    Para un user, el trabajo de otro responde igual que uno inexistente. `p=None` solo desde routers que ya
+    exigen admin (routes_admin)."""
     job = db.get(Job, job_id)
-    if not job:
+    if not job or (p is not None and not can_see(p, job)):
         raise HTTPException(404, "No encontramos ese trabajo.")
     return job
+
+
+def can_see(p: Principal, job: Job) -> bool:
+    return p.is_admin or (job.owner_id is not None and job.owner_id == p.user.id)
 
 
 def job_status(job: Job) -> dict:
@@ -84,13 +93,15 @@ def job_status(job: Job) -> dict:
 
 
 def _create_job_from_bytes(db: Session, data: bytes, filename: str, rights_confirmed: bool, source_lang: str,
-                          target_lang: str, mode: str, ocr_lang: str, correct_ocr: bool) -> dict:
+                          target_lang: str, mode: str, ocr_lang: str, correct_ocr: bool, p: Principal) -> dict:
     """Valida el PDF, lo guarda en `uploads_dir` y encola el job (común a la subida directa y a la de S3)."""
     st = get_settings()
     if not rights_confirmed:
         raise HTTPException(400, "Debes confirmar que tienes derechos de uso sobre el libro.")
     if mode not in ("translate", "digitize", "prepare"):
         raise HTTPException(400, "Modo no válido.")
+    if mode == "prepare" and not p.is_admin:  # preparar es para el Playground (administración)
+        raise HTTPException(403, "No tienes permiso para esta acción.")
     if mode == "digitize":
         if ocr_lang not in ("en", "es", "auto"):
             raise HTTPException(400, "Idioma de OCR no válido.")
@@ -123,7 +134,7 @@ def _create_job_from_bytes(db: Session, data: bytes, filename: str, rights_confi
     options = ({"mode": "digitize", "ocr_lang": ocr_lang, "correct": bool(correct_ocr)} if mode == "digitize"
                else {"mode": "prepare"} if mode == "prepare" else {})
     job = Job(document_id=doc.id, status="queued", stage="analyze", source_lang=source_lang, target_lang=target_lang,
-              options=options)
+              options=options, owner_id=p.user.id)
     db.add(job)
     db.commit()
     return job_status(job)
@@ -139,12 +150,13 @@ async def create_job(
     ocr_lang: str = Form("en"),
     correct_ocr: bool = Form(False),
     db: Session = Depends(get_db),
+    p: Principal = Depends(require_user),
 ):
     """Subida a través del backend (respaldo cuando el almacenamiento S3 no está disponible)."""
     st = get_settings()
     data = await file.read(st.max_upload_mb * 1024 * 1024 + 1)
     return _create_job_from_bytes(db, data, file.filename or "libro.pdf", rights_confirmed, source_lang, target_lang,
-                                  mode, ocr_lang, correct_ocr)
+                                  mode, ocr_lang, correct_ocr, p)
 
 
 # ---- subida directa del navegador a S3 con URL prefirmada (progreso real de bytes)
@@ -173,20 +185,26 @@ def _check_book_size(size: int) -> None:
         raise HTTPException(413, f"El archivo supera el límite de {st.max_upload_mb} MB.")
 
 
+def _incoming(p: Principal) -> str:
+    """Cada usuario sube a su propia carpeta temporal: from-upload no acepta claves de otro."""
+    return f"{INCOMING}/u{p.user.id}"
+
+
 @router.post("/presign")
-def presign_book(body: PresignBookIn, storage: StoragePort = Depends(get_storage)):
+def presign_book(body: PresignBookIn, storage: StoragePort = Depends(get_storage),
+                 p: Principal = Depends(require_user)):
     if not body.filename.lower().endswith(".pdf"):
         raise HTTPException(400, "Solo se admiten archivos PDF.")
     _check_book_size(body.size)
-    p = storage_call(storage.presigned_upload_url, generate_key(INCOMING, "application/pdf"), "application/pdf", 900)
+    p = storage_call(storage.presigned_upload_url, generate_key(_incoming(p), "application/pdf"), "application/pdf", 900)
     return {"url": p.url, "key": p.key, "expires_at": p.expires_at.isoformat(), "method": "PUT",
             "headers": {"Content-Type": "application/pdf"}}
 
 
 @router.post("/from-upload")
 def create_job_from_upload(body: FromUploadIn, storage: StoragePort = Depends(get_storage),
-                           db: Session = Depends(get_db)):
-    if not body.key.startswith(f"{INCOMING}/") or ".." in body.key:
+                           db: Session = Depends(get_db), p: Principal = Depends(require_user)):
+    if not body.key.startswith(f"{_incoming(p)}/") or ".." in body.key:
         raise HTTPException(400, "Clave no válida.")
     meta = storage_call(storage.get_metadata, body.key)
     if meta is None:
@@ -195,7 +213,7 @@ def create_job_from_upload(body: FromUploadIn, storage: StoragePort = Depends(ge
         _check_book_size(meta.size)
         data = storage_call(storage.download, body.key)
         return _create_job_from_bytes(db, data, body.filename, body.rights_confirmed, body.source_lang,
-                                      body.target_lang, body.mode, body.ocr_lang, body.correct_ocr)
+                                      body.target_lang, body.mode, body.ocr_lang, body.correct_ocr, p)
     finally:
         # el PDF queda en DATA_DIR; el objeto de S3 era solo un temporal
         try:
@@ -205,23 +223,33 @@ def create_job_from_upload(body: FromUploadIn, storage: StoragePort = Depends(ge
 
 
 @router.get("")
-def list_jobs(db: Session = Depends(get_db)):
-    return [job_status(j) for j in db.query(Job).order_by(Job.id.desc()).limit(50)]
+def list_jobs(db: Session = Depends(get_db), p: Principal = Depends(require_user)):
+    q = db.query(Job)
+    if not p.is_admin:
+        q = q.filter(Job.owner_id == p.user.id)
+    return [job_status(j) for j in q.order_by(Job.id.desc()).limit(50)]
 
 
 @router.get("/{job_id}")
-def get_job(job_id: int, db: Session = Depends(get_db)):
-    return job_status(_job_or_404(db, job_id))
+def get_job(job_id: int, db: Session = Depends(get_db), p: Principal = Depends(require_user)):
+    return job_status(_job_or_404(db, job_id, p))
 
 
 @router.get("/{job_id}/events")
-async def job_events(job_id: int):
-    """Progreso en tiempo real (Server-Sent Events)."""
+async def job_events(job_id: int, p: Principal = Depends(require_user)):
+    """Progreso en tiempo real (Server-Sent Events). La sesión se revalida en cada vuelta: si se revoca o
+    caduca, el flujo se corta."""
+    with SessionLocal() as s:
+        _job_or_404(s, job_id, p)
+    session_id = p.session.id
 
     async def gen():
         last = None
         while True:
             with SessionLocal() as s:
+                if not auth_sessions.is_valid(s.get(AuthSession, session_id)):
+                    yield "event: unauthorized\ndata: {}\n\n"
+                    return
                 job = s.get(Job, job_id)
                 if not job:
                     yield "event: error\ndata: {}\n\n"
@@ -239,8 +267,8 @@ async def job_events(job_id: int):
 
 
 @router.post("/{job_id}/cancel")
-def cancel_job(job_id: int, db: Session = Depends(get_db)):
-    job = _job_or_404(db, job_id)
+def cancel_job(job_id: int, db: Session = Depends(get_db), p: Principal = Depends(require_user)):
+    job = _job_or_404(db, job_id, p)
     if job.status in ("queued", "running"):
         job.status = "cancelled"
         db.commit()
@@ -248,7 +276,7 @@ def cancel_job(job_id: int, db: Session = Depends(get_db)):
 
 
 @router.delete("/{job_id}")
-def delete_job(job_id: int, db: Session = Depends(get_db)):
+def delete_job(job_id: int, db: Session = Depends(get_db), p: Principal = Depends(require_admin)):
     """Elimina un libro con todo lo suyo: páginas y bloques, evaluaciones del Playground, archivos generados y,
     si el documento no tiene otro trabajo, el documento con su glosario, términos y PDF subido."""
     from sqlalchemy import func, select
@@ -256,7 +284,7 @@ def delete_job(job_id: int, db: Session = Depends(get_db)):
     from app import playground as pg
     from app.db.models import PlaygroundRun
 
-    job = _job_or_404(db, job_id)
+    job = _job_or_404(db, job_id, p)
     if job.status in ("queued", "running"):
         raise HTTPException(409, "El libro se está procesando: detenlo antes de eliminarlo.")
     busy = db.scalar(select(func.count(PlaygroundRun.id)).where(
@@ -271,8 +299,8 @@ def delete_job(job_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{job_id}/resume")
-def resume_job(job_id: int, db: Session = Depends(get_db)):
-    job = _job_or_404(db, job_id)
+def resume_job(job_id: int, db: Session = Depends(get_db), p: Principal = Depends(require_user)):
+    job = _job_or_404(db, job_id, p)
     if job.status in ("cancelled", "failed", "paused"):
         job.status, job.error = "queued", None
         db.commit()
@@ -280,8 +308,9 @@ def resume_job(job_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{job_id}/download")
-def download(job_id: int, format: str = "pdf", db: Session = Depends(get_db)):
-    job = _job_or_404(db, job_id)
+def download(job_id: int, format: str = "pdf", db: Session = Depends(get_db),
+             p: Principal = Depends(require_user)):
+    job = _job_or_404(db, job_id, p)
     if job.status != "done" or not job.output_path or not Path(job.output_path).exists():
         raise HTTPException(409, "El libro traducido todavía no está listo.")
     if format == "epub":
@@ -329,16 +358,17 @@ def _azw3_for(db: Session, job: Job) -> Path:
 
 
 @router.get("/{job_id}/report")
-def report(job_id: int, db: Session = Depends(get_db)):
-    job = _job_or_404(db, job_id)
+def report(job_id: int, db: Session = Depends(get_db), p: Principal = Depends(require_user)):
+    job = _job_or_404(db, job_id, p)
     if not job.report_path or not Path(job.report_path).exists():
         raise HTTPException(409, "El reporte todavía no está listo.")
     return FileResponse(job.report_path, media_type="application/json", filename=Path(job.report_path).name)
 
 
 @router.get("/{job_id}/pages/{number}/preview")
-def preview(job_id: int, number: int, version: str = "translated", dpi: int = 80, db: Session = Depends(get_db)):
-    job = _job_or_404(db, job_id)
+def preview(job_id: int, number: int, version: str = "translated", dpi: int = 80, db: Session = Depends(get_db),
+            p: Principal = Depends(require_user)):
+    job = _job_or_404(db, job_id, p)
     path = job.document.path if version == "original" else job.output_path
     if not path or not Path(path).exists():
         raise HTTPException(409, "La vista previa todavía no está disponible.")
@@ -350,8 +380,8 @@ def preview(job_id: int, number: int, version: str = "translated", dpi: int = 80
 
 
 @router.get("/{job_id}/pages")
-def pages(job_id: int, db: Session = Depends(get_db)):
-    _job_or_404(db, job_id)
+def pages(job_id: int, db: Session = Depends(get_db), p: Principal = Depends(require_user)):
+    _job_or_404(db, job_id, p)
     rows = db.query(Page).filter(Page.job_id == job_id).order_by(Page.number)
     return [{"number": p.number, "kind": p.kind, "needs_review": p.needs_review, "reasons": p.review_reasons}
             for p in rows]

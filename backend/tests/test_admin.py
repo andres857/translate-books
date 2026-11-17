@@ -17,11 +17,11 @@ def client(tmp_path_factory):
     from app.cli import migrate
 
     migrate()
-    from fastapi.testclient import TestClient
+    from .conftest import admin_client
 
     from app.main import app
 
-    return TestClient(app)
+    return admin_client(app)
 
 
 @pytest.fixture(scope="module")
