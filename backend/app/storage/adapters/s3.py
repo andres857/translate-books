@@ -15,8 +15,14 @@ from typing import BinaryIO
 import boto3
 from boto3.s3.transfer import TransferConfig
 from botocore.config import Config
-from botocore.exceptions import BotoCoreError, ClientError, ConnectionError as BotoConnectionError
-from botocore.exceptions import ConnectTimeoutError, EndpointConnectionError, ReadTimeoutError
+from botocore.exceptions import (
+    BotoCoreError,
+    ClientError,
+    ConnectTimeoutError,
+    EndpointConnectionError,
+    ReadTimeoutError,
+)
+from botocore.exceptions import ConnectionError as BotoConnectionError
 
 from app.storage.config import StorageSettings
 from app.storage.errors import StorageAccessDenied, StorageError, StorageNotFound, StorageUnavailable

@@ -71,9 +71,9 @@ def test_factory(store):
 
 
 def test_settings_api(store):
-    from .conftest import admin_client
-
     from app.main import app
+
+    from .conftest import admin_client
 
     c = admin_client(app)
     r = c.put("/api/settings", json={"provider": "deepseek", "deepseek_api_key": KEY})
@@ -92,9 +92,9 @@ ADMIN_FIELDS = {"provider", "deepseek_model", "deepseek_thinking", "deepseek_con
 
 def test_user_settings_view_hides_key_hint(store):
     """#08: el rol user solo recibe lo que pinta el rótulo del método."""
-    from .conftest import auth_client
-
     from app.main import app
+
+    from .conftest import auth_client
 
     rsmod.update({"deepseek_api_key": KEY})
     data = auth_client(app, "user").get("/api/settings").json()
@@ -105,9 +105,9 @@ def test_user_settings_view_hides_key_hint(store):
 
 
 def test_admin_settings_view_keeps_all_fields(store):
-    from .conftest import admin_client
-
     from app.main import app
+
+    from .conftest import admin_client
 
     rsmod.update({"deepseek_api_key": KEY})
     data = admin_client(app).get("/api/settings").json()

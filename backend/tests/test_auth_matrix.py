@@ -89,10 +89,8 @@ def test_admin_sees_every_job(ctx):
 def test_events_stream_stops_when_session_is_revoked(ctx):
     """El SSE revalida la sesión en cada vuelta: al revocarla, el flujo termina con `unauthorized`."""
     from app.auth import sessions
-    from app.db.models import AuthSession
+    from app.db.models import AuthSession, Job
     from app.db.session import session_scope
-
-    from app.db.models import Job
 
     owner, job = ctx["owner"], ctx["job"]  # última prueba del módulo: revoca las sesiones del dueño
     with session_scope() as db:

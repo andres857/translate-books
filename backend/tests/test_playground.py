@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 
 from app import playground as pg
 from app import runtime_settings as rsmod
-from app.pipeline.translate import FatalAPIError, UsageMeter
+from app.pipeline.translate import FatalAPIError
 
 
 @pytest.fixture(scope="module")
@@ -272,9 +272,9 @@ def test_detect_chapters_scanned_ocr(db):
 
 
 def test_book_pages_endpoint(db, book):
-    from .conftest import admin_client
-
     from app.main import app
+
+    from .conftest import admin_client
 
     c = admin_client(app)
     r = c.get(f"/api/admin/playground/books/{book}/pages")
@@ -312,9 +312,9 @@ def test_correct_task_on_digitized_book(db, monkeypatch):
 
 
 def test_api(db, book, monkeypatch):
-    from .conftest import admin_client
-
     from app.main import app
+
+    from .conftest import admin_client
 
     c = admin_client(app)
     assert set(c.get("/api/admin/prompts").json()) == {"translate", "correct", "shorten", "names", "glossary"}
@@ -360,11 +360,19 @@ def test_api(db, book, monkeypatch):
 
 
 def test_delete_book_removes_analysis_in_cascade(db, book, tmp_path, monkeypatch):
-    from .conftest import admin_client
-
-    from app.db.models import (Document, GlossaryEntry, Job, Page, PlaygroundAttempt, PlaygroundRun, ProtectedTerm,
-                               Segment)
+    from app.db.models import (
+        Document,
+        GlossaryEntry,
+        Job,
+        Page,
+        PlaygroundAttempt,
+        PlaygroundRun,
+        ProtectedTerm,
+        Segment,
+    )
     from app.main import app
+
+    from .conftest import admin_client
 
     outputs = tmp_path / "outputs"
     monkeypatch.setattr(pg, "run_dir", lambda run_id: outputs / "playground" / f"run_{run_id}")
@@ -409,12 +417,12 @@ def test_delete_book_removes_analysis_in_cascade(db, book, tmp_path, monkeypatch
 
 
 def test_glossary_auto_entries_review_and_effective_glossary(db, book):
-    from .conftest import admin_client
-
     from app.db.models import GlossaryEntry, Job
     from app.glossary_service import effective_glossary, save_auto, source_job
     from app.main import app
     from app.pipeline.glossary import GlossaryProposal
+
+    from .conftest import admin_client
 
     with db() as s:
         doc = s.get(Job, book).document
@@ -446,7 +454,8 @@ def test_prepare_generates_glossary_and_tolerates_failure(db, book, monkeypatch)
     from app.db.models import GlossaryEntry, Job
     from app.pipeline.runner import PipelineOptions, PreparedBook
     from app.pipeline.translate import FakeTranslator
-    from app.pipeline.types import PageInfo, Segment as Seg, Style
+    from app.pipeline.types import PageInfo, Style
+    from app.pipeline.types import Segment as Seg
 
     segs = [Seg(key=f"p{n:03d}_s001", page_no=n, bbox=(0, 0, 1, 1), line_rects=[], style=Style(),
                 text=txt, html=txt, protected=txt)
@@ -476,10 +485,10 @@ def test_prepare_generates_glossary_and_tolerates_failure(db, book, monkeypatch)
 
 
 def test_delete_job_endpoint_refuses_active_and_removes_book(db, book, tmp_path, monkeypatch):
-    from .conftest import admin_client
-
     from app.db.models import Document, Job
     from app.main import app
+
+    from .conftest import admin_client
 
     monkeypatch.setattr(pg, "get_settings", lambda: type("S", (), {"outputs_dir": tmp_path / "o",
                                                                     "uploads_dir": tmp_path / "u"})())
@@ -500,10 +509,10 @@ def test_delete_job_endpoint_refuses_active_and_removes_book(db, book, tmp_path,
 
 def test_book_view_chapters_titles_review_and_info(db):
     """Vista Libro: índice con títulos traducidos y autor/subtítulo de la cabecera."""
-    from .conftest import admin_client
-
     from app.db.models import Document, Job, Page, Segment
     from app.main import app
+
+    from .conftest import admin_client
 
     with db() as s:
         doc = Document(original_name="The Book (Carole Taylor) (z-lib.sk).pdf", path="/no/existe.pdf", sha256="t",

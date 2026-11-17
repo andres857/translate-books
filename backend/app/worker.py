@@ -10,17 +10,23 @@ from pathlib import Path
 
 from sqlalchemy import select, text, update
 
+from app import playground, runtime_settings
 from app.config import get_settings
 from app.db.cache import SqlCache
 from app.db.models import Document, Job, Page, ProtectedTerm, Segment
-from app.glossary_service import effective_glossary, save_auto
 from app.db.session import SessionLocal
+from app.glossary_service import effective_glossary, save_auto
 from app.pipeline.digitize import DigitizeOptions, run_digitize
 from app.pipeline.epub import build_epub_for_job
 from app.pipeline.protect import Protector
-from app.pipeline.runner import (Cancelled, PipelineOptions, discover_book_glossary, prepare_book, recompose_page,
-                                 run_pipeline)
-from app import playground, runtime_settings
+from app.pipeline.runner import (
+    Cancelled,
+    PipelineOptions,
+    discover_book_glossary,
+    prepare_book,
+    recompose_page,
+    run_pipeline,
+)
 from app.pipeline.translate import FatalAPIError
 from app.pipeline.types import ensure_unique_keys
 

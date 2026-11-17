@@ -14,13 +14,21 @@ from dataclasses import replace
 from pathlib import Path
 
 import pymupdf
-
 from sqlalchemy import func, select, text, update
 
 from app import runtime_settings
 from app.config import get_settings
-from app.db.models import (Document, GlossaryEntry, Job, Page, PlaygroundAttempt, PlaygroundRun, PromptDraft,
-                           ProtectedTerm, Segment)
+from app.db.models import (
+    Document,
+    GlossaryEntry,
+    Job,
+    Page,
+    PlaygroundAttempt,
+    PlaygroundRun,
+    PromptDraft,
+    ProtectedTerm,
+    Segment,
+)
 from app.db.session import SessionLocal
 from app.glossary_service import effective_glossary
 from app.pipeline.digitize import correct_segments

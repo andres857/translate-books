@@ -1,6 +1,12 @@
 """Glosario: coincidencias, formas del español, minería local, descubrimiento y aplicación al traducir."""
-from app.pipeline.glossary import (Candidate, discover_glossary, form_present, match_glossary, mine_candidates,
-                                   missing_terms)
+from app.pipeline.glossary import (
+    Candidate,
+    discover_glossary,
+    form_present,
+    match_glossary,
+    mine_candidates,
+    missing_terms,
+)
 from app.pipeline.protect import Protector
 from app.pipeline.translate import DictCache, FakeTranslator, cache_key, translate_segments
 from app.pipeline.types import Segment, Style

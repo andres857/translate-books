@@ -86,8 +86,9 @@ def test_redaction_keeps_overlapping_icon():
 
 
 def test_outline_coverage_detects_empty_glyphs():
-    from fontTools.ttLib import TTFont
     import io
+
+    from fontTools.ttLib import TTFont
 
     buf = (FONTS_DIR / "LilitaOne-Regular.ttf").read_bytes()
     assert ord("Í") in outline_coverage(buf)

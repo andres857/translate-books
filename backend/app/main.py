@@ -7,8 +7,16 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app import runtime_settings
-from app.api import (routes_admin, routes_auth, routes_files, routes_jobs, routes_playground, routes_settings,
-                     routes_terms, routes_users)
+from app.api import (
+    routes_admin,
+    routes_auth,
+    routes_files,
+    routes_jobs,
+    routes_playground,
+    routes_settings,
+    routes_terms,
+    routes_users,
+)
 from app.auth.deps import optional_principal, require_admin, require_user, verify_write
 from app.auth.errors import ApiError, payload
 from app.auth.users import ensure_bootstrap_admin

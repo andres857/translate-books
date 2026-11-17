@@ -6,8 +6,14 @@ import pymupdf
 import pytest
 from PIL import Image
 
-from app.pipeline.digitize import (DigitizeOptions, book_title, check_correction, correct_segments,
-                                   ocrmypdf_available, run_digitize)
+from app.pipeline.digitize import (
+    DigitizeOptions,
+    book_title,
+    check_correction,
+    correct_segments,
+    ocrmypdf_available,
+    run_digitize,
+)
 from app.pipeline.translate import FakeTranslator
 from app.pipeline.types import Segment, Style
 
@@ -118,10 +124,10 @@ def test_digitize_job_via_api(tmp_path, monkeypatch):
     from app.cli import migrate
 
     migrate()
-    from .conftest import admin_client
-
     from app import worker
     from app.main import app
+
+    from .conftest import admin_client
 
     c = admin_client(app)
     while worker.claim_job():  # la BD de pruebas es compartida: no dejar trabajos en cola de otras pruebas

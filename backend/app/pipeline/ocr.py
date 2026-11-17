@@ -10,7 +10,6 @@ Las páginas con OCR siempre se marcan para revisión.
 """
 from __future__ import annotations
 
-import io
 import logging
 import re
 import shutil

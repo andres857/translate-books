@@ -19,9 +19,9 @@ def client(tmp_path_factory):
     from app.cli import migrate
 
     migrate()
-    from .conftest import admin_client
-
     from app.main import app
+
+    from .conftest import admin_client
 
     return admin_client(app)
 

@@ -70,10 +70,10 @@ def app_client(tmp_path_factory):
     from app.cli import migrate
 
     migrate()
-    from .conftest import admin_client
-
     from app.main import app
     from app.storage import get_storage
+
+    from .conftest import admin_client
 
     fake = FakeStorage()
     app.dependency_overrides[get_storage] = lambda: fake

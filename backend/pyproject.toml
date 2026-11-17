@@ -62,3 +62,8 @@ ignore = ["E501", "E741", "E731"]
 # Depends/File/Form/Query en los parámetros por defecto son el patrón de FastAPI, no un valor mutable compartido.
 extend-immutable-calls = ["fastapi.Depends", "fastapi.File", "fastapi.Form", "fastapi.Query", "fastapi.Body",
                           "fastapi.Header", "fastapi.Cookie", "fastapi.Path"]
+
+[tool.ruff.lint.isort]
+# backend/alembic/ es la carpeta de migraciones, no el paquete: sin esto ruff trata `alembic` como propio.
+known-first-party = ["app"]
+known-third-party = ["alembic"]
