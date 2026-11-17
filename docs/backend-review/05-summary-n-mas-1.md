@@ -2,7 +2,7 @@
 
 - **Severidad:** Alto
 - **Categoría:** Rendimiento
-- **Estado:** abierto
+- **Estado:** resuelto · commit(s) `2ccecb7`
 - **Ubicación:** `backend/app/api/routes_admin.py:62-86` (`summary`, líneas 67-73)
 - **Aceptación:** [05-summary-n-mas-1.aceptacion.md](05-summary-n-mas-1.aceptacion.md)
 
@@ -27,3 +27,11 @@ La pantalla «Resumen» del admin tarda proporcionalmente al número de páginas
 ## Corrección propuesta
 
 Una consulta agregada: `select(Segment.page_id, func.count(), func.sum(case(...)), func.min(Segment.fit_scale)).group_by(Segment.page_id)` unida a las páginas. La forma del JSON no cambia.
+
+## Notas
+
+Decisión al resolver: la subconsulta reproduce en SQL la «verdad» de Python del código anterior: traducido =
+`action = 'translate'` con `translation` no NULL ni vacía; editado = `edited` verdadero; `min_scale` = mínimo de
+`fit_scale` ignorando NULL y 0 (`if s.fit_scale`). Se usa outer join para que las páginas sin bloques sigan saliendo
+con `segments: 0` y `min_scale: null`; el redondeo a 2 decimales sigue en Python. El frontend no necesita cambios
+porque el JSON es idéntico (mismo sha256 sobre la copia de la BD real).
