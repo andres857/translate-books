@@ -36,5 +36,7 @@ Según el caso (ver «You might not need an effect» de React):
 
 ## Notas
 
+Tras el #11 quedan 19: el efecto inicial de `lib/auth.tsx` ya no consulta la sesión cuando llega del servidor.
+
 Se corrige por archivos, con un commit cada uno. Cuando no quede ninguno, la regla vuelve a `error` en
 `frontend/eslint.config.mjs`.
