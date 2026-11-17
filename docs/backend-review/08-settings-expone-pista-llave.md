@@ -2,7 +2,7 @@
 
 - **Severidad:** Medio
 - **Categoría:** Seguridad
-- **Estado:** abierto
+- **Estado:** resuelto · commit(s) `1592a3c`
 - **Ubicación:** `backend/app/api/routes_settings.py:376-378` (`GET /api/settings`, router con dependencia USER) y `backend/app/runtime_settings.py:41-47` (`public`)
 - **Aceptación:** [08-settings-expone-pista-llave.aceptacion.md](08-settings-expone-pista-llave.aceptacion.md)
 
@@ -30,4 +30,9 @@ Para el admin, la vista completa como hoy; para el user, solo lo que pinta la UI
 
 ## Notas
 
-Decisión pendiente (preguntar) sobre qué campos ve el user.
+Decisión del usuario (16-nov-2026): para el rol user, `GET /api/settings` devuelve solo lo que pinta el rótulo
+del método: `provider` y `deepseek_model`. `deepseek_thinking` tampoco se devuelve porque `methodLabel` no lo usa;
+quedan fuera `deepseek_key_hint`, `deepseek_key_set`, `deepseek_concurrency` y `deepseek_models`. El admin conserva
+la vista completa (`RuntimeSettings.public()`); el user recibe `RuntimeSettings.method()`. Es un cambio de contrato
+para el rol user: en el frontend, `MethodSettings` + `getMethodSettings()` para la barra lateral y el inicio, y
+`getSettings()` (vista completa) solo en la pantalla Configuración del admin.
