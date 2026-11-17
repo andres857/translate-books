@@ -2,7 +2,7 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { getHealth, getJob, jobAction, type JobStatus, type StageState } from "@/lib/api";
+import { ApiError, getHealth, getJob, jobAction, type JobStatus, type StageState } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { IconArrowLeft, IconCheck, IconDownload, IconHourglass, IconRefresh, IconWarn, IconX } from "../../components/art";
 
@@ -44,6 +44,7 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
   const { id } = use(params);
   const [job, setJob] = useState<JobStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [missing, setMissing] = useState(false); // 404/403: no existe o no es de este usuario
   const [azw3, setAzw3] = useState(true);
 
   useEffect(() => {
@@ -62,6 +63,11 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
         if (!["done", "failed", "cancelled"].includes(j.status)) timer = setTimeout(tick, 1500);
       } catch (e) {
         if (!alive) return;
+        // no existe o no es tuyo: reintentar no lo va a cambiar. Solo se reintenta ante red caída o 5xx
+        if (e instanceof ApiError && (e.status === 404 || e.status === 403)) {
+          setMissing(true);
+          return;
+        }
         setError((e as Error).message);
         timer = setTimeout(tick, 4000);
       }
@@ -79,6 +85,19 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
     } catch (e) {
       setError((e as Error).message);
     }
+  }
+
+  if (missing) {
+    return (
+      <main>
+        <Link href="/" className="back"><IconArrowLeft width={16} height={16} /> Libros</Link>
+        <section className="card">
+          <h1>No encontramos ese libro</h1>
+          <p className="muted">Puede que se haya eliminado o que no esté en tu lista.</p>
+          <p><Link className="btn secondary" href="/">Ir a Libros</Link></p>
+        </section>
+      </main>
+    );
   }
 
   if (!job) {
