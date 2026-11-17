@@ -10,7 +10,8 @@ import pymupdf
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.orm import Session, joinedload, object_session
 
 from app.api.storage_errors import storage_call
 from app.auth import sessions as auth_sessions
@@ -52,7 +53,22 @@ def can_see(p: Principal, job: Job) -> bool:
     return p.is_admin or (job.owner_id is not None and job.owner_id == p.user.id)
 
 
-def job_status(job: Job) -> dict:
+def _review_pages(db: Session, job_ids: list[int]) -> dict[int, list[dict]]:
+    """Páginas a revisar de varios trabajos en una sola consulta (solo `number` y `review_reasons`, filtrando
+    `needs_review`), en el mismo orden que la relación `Job.pages`."""
+    out: dict[int, list[dict]] = {i: [] for i in job_ids}
+    if not job_ids:
+        return out
+    rows = db.execute(select(Page.job_id, Page.number, Page.review_reasons)
+                      .where(Page.job_id.in_(job_ids), Page.needs_review.is_(True)).order_by(Page.id))
+    for job_id, number, reasons in rows:
+        out[job_id].append({"page": number, "reasons": reasons})
+    return out
+
+
+def job_status(job: Job, review: list[dict] | None = None) -> dict:
+    """Estado del trabajo para la API. `review` (páginas a revisar) se puede pasar ya calculado (listado);
+    si no, se consulta sin cargar todas las páginas."""
     options = job.options or {}
     mode = options.get("mode") if options.get("mode") in ("digitize", "prepare") else "translate"
     digitize = mode == "digitize"
@@ -70,7 +86,10 @@ def job_status(job: Job) -> dict:
         else:
             state = "pending"
         stages.append({"key": key, "label": label, "state": state})
-    review = [{"page": p.number, "reasons": p.review_reasons} for p in job.pages if p.needs_review]
+    if review is None:
+        db = object_session(job)
+        review = (_review_pages(db, [job.id])[job.id] if db is not None
+                  else [{"page": p.number, "reasons": p.review_reasons} for p in job.pages if p.needs_review])
     return {
         "id": job.id,
         "mode": mode,
@@ -224,10 +243,12 @@ def create_job_from_upload(body: FromUploadIn, storage: StoragePort = Depends(ge
 
 @router.get("")
 def list_jobs(db: Session = Depends(get_db), p: Principal = Depends(require_user)):
-    q = db.query(Job)
+    q = db.query(Job).options(joinedload(Job.document))
     if not p.is_admin:
         q = q.filter(Job.owner_id == p.user.id)
-    return [job_status(j) for j in q.order_by(Job.id.desc()).limit(50)]
+    jobs = q.order_by(Job.id.desc()).limit(50).all()
+    review = _review_pages(db, [j.id for j in jobs])
+    return [job_status(j, review[j.id]) for j in jobs]
 
 
 @router.get("/{job_id}")
