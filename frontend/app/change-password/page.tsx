@@ -4,6 +4,7 @@
    lateral. Al cambiarla se cierran las demás sesiones abiertas. */
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { changePassword } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { IconBook, IconCheck, IconWarn } from "../components/art";
@@ -12,6 +13,7 @@ const MIN = 12;
 
 export default function ChangePasswordPage() {
   const { state, accept, signOut } = useAuth();
+  const router = useRouter();
   const forced = state?.session.kind === "restricted";
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
@@ -32,7 +34,10 @@ export default function ChangePasswordPage() {
       const s = await changePassword(current, next);
       setCurrent(""); setNext(""); setRepeat("");
       setDone(true);
-      accept(s); // si venía de una temporal, AppShell lleva a Libros
+      accept(s);
+      // cambio obligatorio (venía de una temporal): ya puede usar la app. /change-password también es el
+      // cambio voluntario, así que routeFor no redirige solo: se va a Libros aquí
+      if (forced) router.replace("/");
     } catch (err) {
       setError((err as Error).message);
     } finally {
