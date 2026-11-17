@@ -4,7 +4,7 @@
 import { Fragment, useEffect, useState, type ComponentType, type SVGProps } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { getSettings, methodLabel, SETTINGS_EVENT } from "@/lib/api";
+import { getMethodSettings, methodLabel, SETTINGS_EVENT } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import {
   IconBook, IconChevron, IconCloud, IconFlask, IconHistory, IconKey, IconLayers, IconLogout, IconSettings, IconText,
@@ -67,7 +67,7 @@ export function SideNav() {
 
   useEffect(() => {
     const load = () =>
-      getSettings()
+      getMethodSettings()
         .then((s) => setMethod({ label: methodLabel(s), provider: s.provider }))
         .catch(() => setMethod(null));
     load();

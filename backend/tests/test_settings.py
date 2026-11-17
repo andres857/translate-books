@@ -84,3 +84,32 @@ def test_settings_api(store):
     r = c.post("/api/settings/test").json()
     assert r["ok"] is True and r["provider"] == "fake"
     assert c.get("/api/health").json()["provider"] == "fake"
+
+
+ADMIN_FIELDS = {"provider", "deepseek_model", "deepseek_thinking", "deepseek_concurrency", "deepseek_key_set",
+                "deepseek_key_hint", "deepseek_models"}
+
+
+def test_user_settings_view_hides_key_hint(store):
+    """#08: el rol user solo recibe lo que pinta el rótulo del método."""
+    from .conftest import auth_client
+
+    from app.main import app
+
+    rsmod.update({"deepseek_api_key": KEY})
+    data = auth_client(app, "user").get("/api/settings").json()
+    assert data == {"provider": "deepseek", "deepseek_model": "deepseek-flash"}
+    for hidden in ("deepseek_key_hint", "deepseek_key_set", "deepseek_concurrency", "deepseek_models"):
+        assert hidden not in data
+    assert "abcd" not in json.dumps(data)
+
+
+def test_admin_settings_view_keeps_all_fields(store):
+    from .conftest import admin_client
+
+    from app.main import app
+
+    rsmod.update({"deepseek_api_key": KEY})
+    data = admin_client(app).get("/api/settings").json()
+    assert set(data) == ADMIN_FIELDS
+    assert data["deepseek_key_set"] is True and data["deepseek_key_hint"] == "abcd"

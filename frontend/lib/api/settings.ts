@@ -13,6 +13,9 @@ export interface TranslationSettings {
   deepseek_models: string[];
 }
 
+/** Lo que `GET /api/settings` devuelve al rol user: solo lo que pinta el rótulo del método. */
+export type MethodSettings = Pick<TranslationSettings, "provider" | "deepseek_model">;
+
 type ReadOnly = "deepseek_key_set" | "deepseek_key_hint" | "deepseek_models";
 
 /** Modelos de la API de chat de DeepSeek (el backend valida la misma lista). */
@@ -37,12 +40,18 @@ export type SettingsChanges = Partial<Omit<TranslationSettings, ReadOnly>> & {
 export const SETTINGS_EVENT = "astrobooks:settings";
 
 /** Nombre corto del método activo, para la barra lateral y la cabecera de Admin. */
-export function methodLabel(s: Pick<TranslationSettings, "provider" | "deepseek_model">): string {
+export function methodLabel(s: MethodSettings): string {
   if (s.provider === "deepseek") return `API · ${s.deepseek_model || "DeepSeek"}`;
   return "Prueba sin API";
 }
 
+/** Vista completa: solo para el admin (el user recibe `MethodSettings`, ver `getMethodSettings`). */
 export async function getSettings(): Promise<TranslationSettings> {
+  return parse(await apiFetch("/api/settings", { cache: "no-store" }));
+}
+
+/** Método activo, válido para cualquier rol. */
+export async function getMethodSettings(): Promise<MethodSettings> {
   return parse(await apiFetch("/api/settings", { cache: "no-store" }));
 }
 

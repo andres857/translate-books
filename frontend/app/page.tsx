@@ -4,7 +4,7 @@
    eliminación con confirmación y el formulario para subir uno nuevo. */
 import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { deleteJob, getSettings, listJobs, methodLabel, type JobStatus } from "@/lib/api";
+import { deleteJob, getMethodSettings, listJobs, methodLabel, type JobStatus } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { UploadBook } from "./components/upload-book";
 import { IconTrash, IconUpload, IconWarn, IconX } from "./components/art";
@@ -38,7 +38,7 @@ export default function BooksPage() {
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
-    getSettings().then((s) => setMethod(methodLabel(s))).catch(() => setMethod(null));
+    getMethodSettings().then((s) => setMethod(methodLabel(s))).catch(() => setMethod(null));
   }, []);
 
   useEffect(() => {

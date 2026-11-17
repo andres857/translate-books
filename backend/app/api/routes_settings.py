@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app import runtime_settings
-from app.auth.deps import require_admin
+from app.auth.deps import Principal, require_admin, require_user
 from app.worker import friendly_error
 
 router = APIRouter(prefix="/api", tags=["settings"])
@@ -18,8 +18,10 @@ class SettingsIn(BaseModel):
 
 
 @router.get("/settings")
-def get_settings_view():
-    return runtime_settings.load().public()
+def get_settings_view(p: Principal = Depends(require_user)):
+    """El admin ve todos los ajustes; el user, solo lo que pinta el rótulo del método (sin pista de la llave)."""
+    rs = runtime_settings.load()
+    return rs.public() if p.is_admin else rs.method()
 
 
 @router.put("/settings", dependencies=[Depends(require_admin)])

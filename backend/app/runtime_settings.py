@@ -46,6 +46,10 @@ class RuntimeSettings:
         data["deepseek_models"] = list(DEEPSEEK_MODELS)
         return data
 
+    def method(self) -> dict:
+        """Vista para el rol user: solo lo que usa `methodLabel` en el frontend."""
+        return {"provider": self.provider, "deepseek_model": self.deepseek_model}
+
     @property
     def concurrency(self) -> int:
         return self.deepseek_concurrency
