@@ -32,6 +32,10 @@ const DIGITIZE_MESSAGE: Record<string, string> = {
   validate: "Estamos revisando el PDF digital.",
 };
 
+// estados en los que el trabajo no avanza solo: se deja de consultar (reanudar vuelve a «queued» y reinicia el
+// sondeo). `paused` hoy solo lo usan las evaluaciones del Playground, pero el backend lo acepta al reanudar.
+const FINAL: JobStatus["status"][] = ["done", "failed", "cancelled", "paused"];
+
 function BadgeIcon({ state }: { state: StageState }) {
   if (state === "completed") return <IconCheck />;
   if (state === "in_progress") return <IconHourglass />;
@@ -60,7 +64,7 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
         if (!alive) return;
         setJob(j);
         setError(null);
-        if (!["done", "failed", "cancelled"].includes(j.status)) timer = setTimeout(tick, 1500);
+        if (!FINAL.includes(j.status)) timer = setTimeout(tick, 1500);
       } catch (e) {
         if (!alive) return;
         // no existe o no es tuyo: reintentar no lo va a cambiar. Solo se reintenta ante red caída o 5xx
@@ -110,7 +114,7 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
 
   const done = job.status === "done";
   const active = job.status === "queued" || job.status === "running";
-  const stopped = job.status === "cancelled" || job.status === "failed";
+  const stopped = job.status === "cancelled" || job.status === "failed" || job.status === "paused";
   const message =
     job.recomposing ? "Estamos recomponiendo una página corregida." :
     job.status === "queued" ? "Tu libro está en la cola y comenzará en breve." :
