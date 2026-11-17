@@ -43,10 +43,11 @@ class ConfirmIn(PresignIn):
 
 
 @router.post("")
-async def upload_file(file: UploadFile = File(...), private: bool = Form(False),
-                      svc: FilesService = Depends(get_files_service)):
+def upload_file(file: UploadFile = File(...), private: bool = Form(False),
+                svc: FilesService = Depends(get_files_service)):
+    """`def` (threadpool): la lectura, la BD y la subida a S3 con boto3 no bloquean el event loop."""
     limit = svc.settings.max_size_bytes
-    data = await file.read(limit + 1)
+    data = file.file.read(limit + 1)
     if len(data) > limit:
         raise HTTPException(413, f"El archivo supera el límite de {svc.settings.upload_max_size_mb} MB.")
     content_type = (file.content_type or "").split(";")[0].strip()

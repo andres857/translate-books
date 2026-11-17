@@ -160,7 +160,7 @@ def _create_job_from_bytes(db: Session, data: bytes, filename: str, rights_confi
 
 
 @router.post("")
-async def create_job(
+def create_job(
     file: UploadFile = File(...),
     rights_confirmed: bool = Form(...),
     source_lang: str = Form("en"),
@@ -171,9 +171,12 @@ async def create_job(
     db: Session = Depends(get_db),
     p: Principal = Depends(require_user),
 ):
-    """Subida a través del backend (respaldo cuando el almacenamiento S3 no está disponible)."""
+    """Subida a través del backend (respaldo cuando el almacenamiento S3 no está disponible).
+
+    Es `def`: FastAPI la ejecuta en el threadpool y abrir el PDF, el SHA-256, la escritura y la BD no bloquean el
+    event loop."""
     st = get_settings()
-    data = await file.read(st.max_upload_mb * 1024 * 1024 + 1)
+    data = file.file.read(st.max_upload_mb * 1024 * 1024 + 1)
     return _create_job_from_bytes(db, data, file.filename or "libro.pdf", rights_confirmed, source_lang, target_lang,
                                   mode, ocr_lang, correct_ocr, p)
 

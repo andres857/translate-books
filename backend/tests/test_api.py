@@ -32,6 +32,26 @@ def test_upload_validations(client, sample_pdf):
     assert r.status_code == 400
 
 
+def test_upload_too_large_is_413(client, monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "max_upload_mb", 1)
+    r = client.post("/api/jobs", files={"file": ("x.pdf", b"%PDF" + b"0" * (1024 * 1024), "application/pdf")},
+                    data={"rights_confirmed": "true"})
+    assert r.status_code == 413 and "1 MB" in r.json()["detail"]
+
+
+def test_direct_uploads_run_in_threadpool():
+    """Las subidas directas son `def`: PyMuPDF, SHA-256, disco, BD y boto3 no bloquean el event loop (#06)."""
+    import inspect
+
+    from app.api.routes_files import upload_file
+    from app.api.routes_jobs import create_job
+
+    assert not inspect.iscoroutinefunction(create_job)
+    assert not inspect.iscoroutinefunction(upload_file)
+
+
 def test_upload_process_download(client, sample_pdf):
     from app import worker
 
