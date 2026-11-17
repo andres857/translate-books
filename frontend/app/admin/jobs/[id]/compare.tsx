@@ -69,6 +69,9 @@ type PageState = "ok" | "empty" | "pending";
 const STATE_LABEL: Record<PageState, string> = { ok: "Traducida", empty: "Sin texto", pending: "Pendiente" };
 
 const SHOW_KEY = "compare-sheets";
+const UNSAVED_NOTICE = "Tienes correcciones sin guardar en esta página: guárdalas antes de cambiar de página. "
+  + "Para descartarlas, elige otra página en el índice o con las flechas de la barra.";
+const UNSAVED_CONFIRM = "Tienes correcciones sin guardar en esta página. ¿Cambiar de página y descartarlas?";
 type Show = "both" | "original" | "translated";
 
 export function Compare({ data, page, onPage, onChanged }: {
@@ -86,6 +89,7 @@ export function Compare({ data, page, onPage, onChanged }: {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [unsaved, setUnsaved] = useState(false); // aviso: se intentó cambiar de página con borradores
   const listRef = useRef<HTMLDivElement>(null);
   const [chapters, setChapters] = useState<BookChapter[] | null>(null);
   const [open, setOpen] = useState<Record<number, boolean>>({});
@@ -123,10 +127,27 @@ export function Compare({ data, page, onPage, onChanged }: {
 
   useEffect(() => setPageText(String(page)), [page]);
 
+  // correcciones escritas y sin guardar: cambiar de página las descartaría (ver go() y los efectos de
+  // teclado y rueda). La ref deja que esos efectos lo consulten sin volver a registrarse.
+  // solo cuentan los bloques cuyo texto difiere del guardado (escribir y volver al original no bloquea)
+  const hasDrafts = (info?.segments ?? []).some((x) => drafts[x.key] !== undefined && drafts[x.key] !== (x.translation ?? ""));
+  const draftsRef = useRef(hasDrafts);
+  draftsRef.current = hasDrafts;
+
+  /** Cambio de página pedido por el usuario (índice, flechas de la barra, campo): con borradores, se confirma. */
+  function go(n: number) {
+    if (n === page) return;
+    if (draftsRef.current && !window.confirm(UNSAVED_CONFIRM)) {
+      setPageText(String(page));
+      return;
+    }
+    onPage(n);
+  }
+
   function goTo(e?: React.FormEvent) {
     e?.preventDefault();
     const n = Number(pageText);
-    if (Number.isInteger(n) && n >= 1 && n <= total) onPage(n);
+    if (Number.isInteger(n) && n >= 1 && n <= total) go(n);
     else setPageText(String(page));
   }
 
@@ -147,6 +168,7 @@ export function Compare({ data, page, onPage, onChanged }: {
   useEffect(() => {
     setDrafts({});
     setNotice(null);
+    setUnsaved(false);
     load();
   }, [load]);
 
@@ -155,6 +177,8 @@ export function Compare({ data, page, onPage, onChanged }: {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       if (el && ["TEXTAREA", "INPUT", "SELECT", "BUTTON"].includes(el.tagName)) return;
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      if (draftsRef.current) return setUnsaved(true); // gesto automático: no se pregunta, se avisa
       if (e.key === "ArrowLeft" && page > 1) onPage(page - 1);
       if (e.key === "ArrowRight" && page < total) onPage(page + 1);
     };
@@ -175,6 +199,7 @@ export function Compare({ data, page, onPage, onChanged }: {
       const atEdge = down ? el.scrollTop + el.clientHeight >= el.scrollHeight - 2 : el.scrollTop <= 1;
       if (!atEdge) return; // todavía queda hoja por recorrer: desplazamiento normal
       e.preventDefault();
+      if (draftsRef.current) return setUnsaved(true);
       const now = Date.now();
       if (now < turn.current.until) return;
       const next = page + (down ? 1 : -1);
@@ -263,7 +288,7 @@ export function Compare({ data, page, onPage, onChanged }: {
         const st = stateOf(p);
         return (
           <button key={p.number} type="button" className={`page-tile ${st}`} aria-current={p.number === page}
-            onClick={() => onPage(p.number)} aria-label={`Página ${p.number}, ${STATE_LABEL[st].toLowerCase()}`}
+            onClick={() => go(p.number)} aria-label={`Página ${p.number}, ${STATE_LABEL[st].toLowerCase()}`}
             title={`Página ${p.number} · ${STATE_LABEL[st]}`}>
             {p.number}
           </button>
@@ -329,7 +354,7 @@ export function Compare({ data, page, onPage, onChanged }: {
         <section className="viewer-card" aria-label="Visor de páginas">
           <div className="viewer-bar">
             <div className="row">
-              <button type="button" className="btn secondary icon" disabled={page <= 1} onClick={() => onPage(page - 1)}
+              <button type="button" className="btn secondary icon" disabled={page <= 1} onClick={() => go(page - 1)}
                 aria-label="Página anterior"><IconArrowLeft /></button>
               <form className="page-field" onSubmit={goTo}>
                 <label htmlFor="page-field">Página</label>
@@ -338,7 +363,7 @@ export function Compare({ data, page, onPage, onChanged }: {
                   onFocus={(e) => e.target.select()} aria-describedby="page-total" />
                 <span id="page-total">de {total}</span>
               </form>
-              <button type="button" className="btn secondary icon" disabled={page >= total} onClick={() => onPage(page + 1)}
+              <button type="button" className="btn secondary icon" disabled={page >= total} onClick={() => go(page + 1)}
                 aria-label="Página siguiente"><IconArrowRight /></button>
               {current >= 0 && (
                 <nav className="crumbs" aria-label="Ubicación en el libro">
@@ -387,6 +412,7 @@ export function Compare({ data, page, onPage, onChanged }: {
 
         {error && <div className="alert error" role="alert"><IconWarn /><span>{error}</span></div>}
         {notice && <div className="alert ok" role="status"><IconRefresh /><span>{notice}</span></div>}
+        {unsaved && hasDrafts && <div className="alert" role="status"><IconWarn /><span>{UNSAVED_NOTICE}</span></div>}
 
         <section className="card" aria-labelledby="blocks-title">
           <div className="card-head">
