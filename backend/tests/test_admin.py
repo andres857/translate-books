@@ -214,3 +214,89 @@ def test_edit_during_queued_recompose_keeps_first_correction(client, job_id):
     kept = {s["key"]: s for s in client.get(f"/api/admin/jobs/{job_id}/pages/{number}/segments").json()["segments"]}
     assert kept[first["key"]]["edited"] is True and kept[first["key"]]["translation"] == "Primera KVJX"
     assert kept[second["key"]]["edited"] is False
+
+
+def _job_options(job_id: int) -> dict:
+    from app.db.models import Job
+    from app.db.session import SessionLocal
+
+    with SessionLocal() as s:
+        return dict(s.get(Job, job_id).options or {})
+
+
+def test_second_recompose_rejected_while_recomposing(client, job_id):
+    """#03: con una recomposición en cola o en marcha, pedir otra página da 409 y la primera sigue pedida."""
+    from app import worker
+
+    r = client.post(f"/api/admin/jobs/{job_id}/pages/3/recompose")
+    assert r.status_code == 200 and r.json()["status"] == "queued"
+    r = client.post(f"/api/admin/jobs/{job_id}/pages/5/recompose")
+    assert r.status_code == 409, r.text
+    assert "Ya se está recomponiendo" in r.json()["detail"]
+    assert _job_options(job_id)["recompose"] == [3]
+    assert worker.claim_job() == job_id  # running
+    r = client.post(f"/api/admin/jobs/{job_id}/pages/5/recompose")
+    assert r.status_code == 409 and "Ya se está recomponiendo" in r.json()["detail"]
+    assert _job_options(job_id)["recompose"] == [3]
+    worker.process(job_id)
+    assert client.get(f"/api/jobs/{job_id}").json()["status"] == "done"
+    # terminada la primera, la segunda ya se acepta
+    r = client.post(f"/api/admin/jobs/{job_id}/pages/5/recompose")
+    assert r.status_code == 200 and r.json()["status"] == "queued"
+    assert worker.claim_job() == job_id
+    worker.process(job_id)
+    assert client.get(f"/api/jobs/{job_id}").json()["status"] == "done"
+
+
+def test_concurrent_recompose_loses_nothing(client, job_id, monkeypatch):
+    """#03: si otra petición encola entre la lectura y la escritura, esta da 409 y no pisa la otra."""
+    from app import worker
+    from app.api import routes_admin
+    from app.db.models import Job
+    from app.db.session import SessionLocal
+
+    real = routes_admin._page_or_404
+
+    def other_request_wins(db, jid, number):
+        with SessionLocal() as s:  # la otra petición ya encoló la página 3
+            job = s.get(Job, jid)
+            job.options = {**(job.options or {}), "recompose": [3]}
+            job.status = "queued"
+            s.commit()
+        return real(db, jid, number)
+
+    monkeypatch.setattr(routes_admin, "_page_or_404", other_request_wins)
+    r = client.post(f"/api/admin/jobs/{job_id}/pages/5/recompose")
+    assert r.status_code == 409 and "Ya se está recomponiendo" in r.json()["detail"]
+    assert _job_options(job_id)["recompose"] == [3]
+    monkeypatch.setattr(routes_admin, "_page_or_404", real)
+    assert worker.claim_job() == job_id
+    worker.process(job_id)
+    assert client.get(f"/api/jobs/{job_id}").json()["status"] == "done"
+
+
+def test_recompose_clears_done_pages_and_previous_error(client, job_id, monkeypatch):
+    """#03: tras recomponer, options no guarda las páginas hechas ni el recompose_error anterior."""
+    from app import worker
+
+    real = worker.recompose_page
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("falla de prueba")
+
+    monkeypatch.setattr(worker, "recompose_page", broken)
+    assert client.post(f"/api/admin/jobs/{job_id}/pages/2/recompose").status_code == 200
+    assert worker.claim_job() == job_id
+    worker.process(job_id)
+    st = client.get(f"/api/jobs/{job_id}").json()
+    assert st["status"] == "done" and st["recompose_error"]
+    assert "recompose" not in _job_options(job_id)
+
+    monkeypatch.setattr(worker, "recompose_page", real)
+    assert client.post(f"/api/admin/jobs/{job_id}/pages/2/recompose").status_code == 200
+    assert worker.claim_job() == job_id
+    worker.process(job_id)
+    st = client.get(f"/api/jobs/{job_id}").json()
+    assert st["status"] == "done" and st["recompose_error"] is None and st["recomposing"] is False
+    options = _job_options(job_id)
+    assert "recompose" not in options and "recompose_error" not in options

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app import playground as pg
@@ -18,6 +18,8 @@ from app.db.session import get_db
 from app.pipeline.translate import check_translation, plain, sanitize_html
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+RECOMPOSE_BUSY = "Ya se está recomponiendo una página de este libro: espera a que termine."
 
 
 def _report(job: Job) -> dict:
@@ -145,12 +147,19 @@ def recompose(job_id: int, number: int, db: Session = Depends(get_db)):
     options = dict(job.options or {})
     if options.get("mode") == "digitize":
         raise HTTPException(400, "Los libros digitalizados no se recomponen.")
+    if job.status in ("queued", "running") and options.get("recompose"):
+        # el worker trabaja con las páginas que leyó al empezar: otra petición se perdería en silencio
+        raise HTTPException(409, RECOMPOSE_BUSY)
     if job.status != "done" or not job.output_path or not Path(job.output_path).exists():
         raise HTTPException(409, "El libro tiene que estar terminado para recomponer una página.")
     _page_or_404(db, job_id, number)
     options["recompose"] = sorted(set(options.get("recompose") or []) | {number})
     options.pop("recompose_error", None)
-    job.options = options
-    job.status, job.stage, job.progress, job.error = "queued", "analyze", 0.0, None
+    # solo si sigue 'done': dos peticiones a la vez no pueden encolarse una encima de otra
+    if not db.execute(update(Job).where(Job.id == job_id, Job.status == "done").values(
+            options=options, status="queued", stage="analyze", progress=0.0, error=None)).rowcount:
+        db.rollback()
+        raise HTTPException(409, RECOMPOSE_BUSY)
     db.commit()
+    db.refresh(job)
     return job_status(job)
