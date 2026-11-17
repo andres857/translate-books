@@ -21,6 +21,7 @@ from app.auth.deps import Principal, require_admin, require_user
 from app.config import get_settings
 from app.db.models import AuthSession, Document, Job, Page
 from app.db.session import SessionLocal, get_db
+from app.jobs_service import delete_job_and_files, ensure_not_busy, get_visible_job
 from app.pipeline.azw3 import Azw3Unavailable, azw3_path_for, build_azw3, ebook_convert_available
 from app.pipeline.digitize import ocrmypdf_available
 from app.pipeline.epub import build_epub_for_job, epub_path_for
@@ -42,20 +43,6 @@ DIGITIZE_STAGES = [("upload", "Carga"), ("analyze", "Análisis"), ("ocr", "OCR")
 # preparar para el Playground: se extrae la información del libro sin traducir nada
 PREPARE_STAGES = [("upload", "Carga"), ("analyze", "Análisis"), ("ocr", "OCR"), ("protect", "Protección"),
                   ("glossary", "Glosario"), ("done", "Listo para evaluar")]
-
-
-def _job_or_404(db: Session, job_id: int, p: Principal | None) -> Job:
-    """El trabajo si existe y el usuario puede verlo (el admin ve todos; un user solo los suyos).
-    Para un user, el trabajo de otro responde igual que uno inexistente. `p=None` solo desde routers que ya
-    exigen admin (routes_admin)."""
-    job = db.get(Job, job_id)
-    if not job or (p is not None and not can_see(p, job)):
-        raise HTTPException(404, "No encontramos ese trabajo.")
-    return job
-
-
-def can_see(p: Principal, job: Job) -> bool:
-    return p.is_admin or (job.owner_id is not None and job.owner_id == p.user.id)
 
 
 def _review_pages(db: Session, job_ids: list[int]) -> dict[int, list[dict]]:
@@ -258,7 +245,7 @@ def list_jobs(db: Session = Depends(get_db), p: Principal = Depends(require_user
 
 @router.get("/{job_id}", response_model=JobRead)
 def get_job(job_id: int, db: Session = Depends(get_db), p: Principal = Depends(require_user)):
-    return job_status(_job_or_404(db, job_id, p))
+    return job_status(get_visible_job(db, job_id, p))
 
 
 @router.get("/{job_id}/events")
@@ -266,7 +253,7 @@ async def job_events(job_id: int, p: Principal = Depends(require_user)):
     """Progreso en tiempo real (Server-Sent Events). La sesión se revalida en cada vuelta: si se revoca o
     caduca, el flujo se corta."""
     with SessionLocal() as s:
-        _job_or_404(s, job_id, p)
+        get_visible_job(s, job_id, p)
     session_id = p.session.id
 
     async def gen():
@@ -294,7 +281,7 @@ async def job_events(job_id: int, p: Principal = Depends(require_user)):
 
 @router.post("/{job_id}/cancel", response_model=JobRead)
 def cancel_job(job_id: int, db: Session = Depends(get_db), p: Principal = Depends(require_user)):
-    job = _job_or_404(db, job_id, p)
+    job = get_visible_job(db, job_id, p)
     if job.status in ("queued", "running"):
         job.status = "cancelled"
         db.commit()
@@ -305,28 +292,15 @@ def cancel_job(job_id: int, db: Session = Depends(get_db), p: Principal = Depend
 def delete_job(job_id: int, db: Session = Depends(get_db), p: Principal = Depends(require_admin)):
     """Elimina un libro con todo lo suyo: páginas y bloques, evaluaciones del Playground, archivos generados y,
     si el documento no tiene otro trabajo, el documento con su glosario, términos y PDF subido."""
-    from sqlalchemy import func, select
-
-    from app import playground as pg
-    from app.db.models import PlaygroundRun
-
-    job = _job_or_404(db, job_id, p)
-    if job.status in ("queued", "running"):
-        raise HTTPException(409, "El libro se está procesando: detenlo antes de eliminarlo.")
-    busy = db.scalar(select(func.count(PlaygroundRun.id)).where(
-        PlaygroundRun.job_id == job.id, PlaygroundRun.status.in_(("queued", "running"))))
-    if busy:
-        raise HTTPException(409, "Hay una evaluación del Playground en curso con este libro: espera o cancélala.")
-    removed = pg.delete_job(db, job)
-    db.commit()
-    for path in removed:  # después del commit: si la BD falla, los archivos siguen ahí
-        pg.remove_path(path)
+    job = get_visible_job(db, job_id, p)
+    ensure_not_busy(db, job)
+    delete_job_and_files(db, job)
     return {"ok": True}
 
 
 @router.post("/{job_id}/resume", response_model=JobRead)
 def resume_job(job_id: int, db: Session = Depends(get_db), p: Principal = Depends(require_user)):
-    job = _job_or_404(db, job_id, p)
+    job = get_visible_job(db, job_id, p)
     if job.status in ("cancelled", "failed", "paused"):
         job.status, job.error = "queued", None
         db.commit()
@@ -336,7 +310,7 @@ def resume_job(job_id: int, db: Session = Depends(get_db), p: Principal = Depend
 @router.get("/{job_id}/download")
 def download(job_id: int, format: Literal["pdf", "epub", "azw3"] = "pdf", db: Session = Depends(get_db),
              p: Principal = Depends(require_user)):
-    job = _job_or_404(db, job_id, p)
+    job = get_visible_job(db, job_id, p)
     if job.status != "done" or not job.output_path or not Path(job.output_path).exists():
         raise HTTPException(409, "El libro traducido todavía no está listo.")
     if format == "epub":
@@ -383,7 +357,7 @@ def _azw3_for(db: Session, job: Job) -> Path:
 
 @router.get("/{job_id}/report")
 def report(job_id: int, db: Session = Depends(get_db), p: Principal = Depends(require_user)):
-    job = _job_or_404(db, job_id, p)
+    job = get_visible_job(db, job_id, p)
     if not job.report_path or not Path(job.report_path).exists():
         raise HTTPException(409, "El reporte todavía no está listo.")
     return FileResponse(job.report_path, media_type="application/json", filename=Path(job.report_path).name)
@@ -392,7 +366,7 @@ def report(job_id: int, db: Session = Depends(get_db), p: Principal = Depends(re
 @router.get("/{job_id}/pages/{number}/preview")
 def preview(job_id: int, number: int, version: Literal["original", "translated"] = "translated", dpi: int = 80,
             db: Session = Depends(get_db), p: Principal = Depends(require_user)):
-    job = _job_or_404(db, job_id, p)
+    job = get_visible_job(db, job_id, p)
     path = job.document.path if version == "original" else job.output_path
     if not path or not Path(path).exists():
         raise HTTPException(409, "La vista previa todavía no está disponible.")
@@ -405,7 +379,7 @@ def preview(job_id: int, number: int, version: Literal["original", "translated"]
 
 @router.get("/{job_id}/pages", response_model=list[PageRead])
 def pages(job_id: int, db: Session = Depends(get_db), p: Principal = Depends(require_user)):
-    _job_or_404(db, job_id, p)
+    get_visible_job(db, job_id, p)
     rows = db.query(Page).filter(Page.job_id == job_id).order_by(Page.number)
     return [{"number": p.number, "kind": p.kind, "needs_review": p.needs_review, "reasons": p.review_reasons}
             for p in rows]

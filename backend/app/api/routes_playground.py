@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app import playground as pg
 from app.db.models import Job, Page, PlaygroundAttempt, PlaygroundRun, PromptDraft, Segment
 from app.db.session import get_db
+from app.jobs_service import delete_job_and_files, ensure_not_busy
 from app.pipeline.translate import PROMPTS, TAG_RE
 
 router = APIRouter(prefix="/api/admin", tags=["playground"])
@@ -103,14 +104,8 @@ def delete_book(job_id: int, db: Session = Depends(get_db)):
     historial y PDFs, y la salida en disco. Si el documento no tiene otro análisis, también se borra
     (con su glosario y términos propios, y el PDF subido si ningún otro documento lo comparte)."""
     job = _job_done(db, job_id)
-    busy = db.scalar(select(func.count(PlaygroundRun.id)).where(
-        PlaygroundRun.job_id == job.id, PlaygroundRun.status.in_(("queued", "running"))))
-    if busy:
-        raise HTTPException(409, "Hay una evaluación en curso con este libro: espera a que termine o cancélala.")
-    removed = pg.delete_job(db, job)
-    db.commit()
-    for path in removed:  # después del commit: si la BD falla, los archivos siguen ahí
-        pg.remove_path(path)
+    ensure_not_busy(db, job, "Hay una evaluación en curso con este libro: espera a que termine o cancélala.")
+    delete_job_and_files(db, job)
     return {"ok": True}
 
 

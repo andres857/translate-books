@@ -12,9 +12,10 @@ from sqlalchemy import and_, case, func, select, update
 from sqlalchemy.orm import Session
 
 from app import playground as pg
-from app.api.routes_jobs import _job_or_404, job_status
+from app.api.routes_jobs import job_status
 from app.db.models import Job, Page, Segment
 from app.db.session import get_db
+from app.jobs_service import get_visible_job
 from app.pipeline.translate import check_translation, plain, sanitize_html
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -63,7 +64,7 @@ def book_info(job: Job) -> dict:
 
 @router.get("/jobs/{job_id}/summary")
 def summary(job_id: int, db: Session = Depends(get_db)):
-    job = _job_or_404(db, job_id, None)  # router solo admin
+    job = get_visible_job(db, job_id, None)  # router solo admin
     report = _report(job)
     # Una sola consulta agregada por página (antes, una carga de `p.segments` por página). Mismos criterios que
     # en Python: traducido = acción «translate» con traducción no vacía; escala mínima ignorando NULL y 0.
@@ -105,7 +106,7 @@ def _page_or_404(db: Session, job_id: int, number: int) -> Page:
 
 @router.get("/jobs/{job_id}/pages/{number}/segments")
 def page_segments(job_id: int, number: int, db: Session = Depends(get_db)):
-    _job_or_404(db, job_id, None)  # router solo admin
+    get_visible_job(db, job_id, None)  # router solo admin
     page = _page_or_404(db, job_id, number)
     return {"number": page.number, "width": page.width, "height": page.height, "kind": page.kind,
             "needs_review": page.needs_review, "reasons": page.review_reasons or [],
@@ -115,7 +116,7 @@ def page_segments(job_id: int, number: int, db: Session = Depends(get_db)):
 @router.get("/jobs/{job_id}/chapters")
 def chapters(job_id: int, db: Session = Depends(get_db)):
     """Índice del libro (capítulos y secciones) con el título traducido de cada uno cuando se encuentra."""
-    job = _job_or_404(db, job_id, None)  # router solo admin
+    job = get_visible_job(db, job_id, None)  # router solo admin
     return pg.translate_titles(db, job, pg.book_chapters(db, job))
 
 
@@ -126,7 +127,7 @@ class SegmentEdit(BaseModel):
 @router.put("/jobs/{job_id}/segments/{seg_key}")
 def edit_segment(job_id: int, seg_key: str, body: SegmentEdit, db: Session = Depends(get_db)):
     """Guarda una traducción corregida a mano. No recompone: eso se pide aparte, por página."""
-    job = _job_or_404(db, job_id, None)  # router solo admin
+    job = get_visible_job(db, job_id, None)  # router solo admin
     if (job.options or {}).get("mode") == "digitize":
         raise HTTPException(400, "Los libros digitalizados no tienen traducción que corregir.")
     if job.status in ("queued", "running"):
@@ -151,7 +152,7 @@ def edit_segment(job_id: int, seg_key: str, body: SegmentEdit, db: Session = Dep
 @router.post("/jobs/{job_id}/pages/{number}/recompose")
 def recompose(job_id: int, number: int, db: Session = Depends(get_db)):
     """Encola la recomposición de una página; la ejecuta el worker."""
-    job = _job_or_404(db, job_id, None)  # router solo admin
+    job = get_visible_job(db, job_id, None)  # router solo admin
     options = dict(job.options or {})
     if options.get("mode") == "digitize":
         raise HTTPException(400, "Los libros digitalizados no se recomponen.")
