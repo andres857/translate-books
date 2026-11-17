@@ -17,7 +17,9 @@ Ejecuta todo desde la raíz del repo (`traductor_libros/`).
 
 ## 1. Verificar antes de construir
 
-- Frontend cambiado: `cd frontend && npx tsc --noEmit` y `node ../handoff/check.mjs app lib` (0 problemas).
+- Frontend cambiado: `cd frontend && npx tsc --noEmit`, `npm run lint` (0 errores), `npm run test` y
+  `node ../handoff/check.mjs app lib` (0 problemas). El smoke test de navegador (`npm run test:e2e`) se ejecuta
+  después de desplegar, con `E2E_USER_EMAIL`/`E2E_USER_PASSWORD` de una cuenta `user`.
 - Backend cambiado: `cd backend && python -m pytest -q` (o las pruebas afectadas).
 
 Si algo falla, corrige antes de desplegar.

@@ -31,6 +31,7 @@ marcan (`- [x]`) al comprobarlas tras el arreglo.
 | 13 | Medio | [Archivos con demasiadas responsabilidades](13-archivos-gigantes.md) | [criterios](13-archivos-gigantes.aceptacion.md) |
 | 14 | Medio | [Sin ESLint ni tests: hay `eslint-disable` que no comprueba nadie](14-sin-eslint-ni-tests.md) | [criterios](14-sin-eslint-ni-tests.aceptacion.md) |
 | 15 | Bajo | [Todas las pestañas del navegador tienen el mismo título](15-titulos-por-pagina.md) | [criterios](15-titulos-por-pagina.aceptacion.md) |
+| 16 | Medio | [setState síncrono dentro de efectos (20 casos)](16-setstate-en-efectos.md) | [criterios](16-setstate-en-efectos.aceptacion.md) |
 
 ## Orden recomendado
 
@@ -39,6 +40,7 @@ marcan (`- [x]`) al comprobarlas tras el arreglo.
 3. #06, #07, #09 y #10: robustez menor. #08 requiere decidir el enfoque (ver Notas de su ficha).
 4. #14: ESLint y smoke tests, antes de tocar la estructura.
 5. #12, luego #11, #13 y #15: cambios estructurales graduales, un commit por paso.
+6. #16 (encontrado por ESLint en el #14): por archivos, junto con #13 cuando toque el mismo archivo.
 
 ## Comportamientos de regresión
 

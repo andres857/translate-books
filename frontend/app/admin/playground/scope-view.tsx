@@ -101,7 +101,7 @@ export function ScopeView(p: Props) {
   useEffect(() => {
     const scopeOf = (m: Mode): PlaygroundScope[] => (m === "range" ? ["pages"] : m === "loose" ? ["pages", "page"] : [m]);
     setMode((m) => (scopeOf(m).includes(p.value.scope) ? m : modeOf(p.value)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reacciona solo al alcance que llega de fuera, no a cada cambio de p.value
   }, [p.value.scope]);
   useEffect(() => {
     if (p.value.scope !== "pages") return;
@@ -131,7 +131,7 @@ export function ScopeView(p: Props) {
     : m === "range" ? rangeSpec : looseSpec);
   const inBook = (ns: number[]) => ns.filter((n) => n >= 1 && n <= count);
   const selected = useMemo(() => new Set(inBook(parsePages(specOf(mode)))),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- specOf e inBook se recrean en cada render y solo usan estos valores
     [mode, count, rangeSpec, looseSpec, chapterInfo]);
   const countOf = (m: Mode) => inBook(parsePages(specOf(m))).length;
 
@@ -395,6 +395,7 @@ export function ScopeView(p: Props) {
                       <button type="button" data-page={n} className={cls} aria-pressed={selected.has(n)}
                         title={`Página ${n}${x ? ` · ${x.blocks} bloques${SCANNED.has(x.kind) ? " · OCR" : ""}` : ""}${selected.has(n) ? " · en el alcance" : ""} · doble clic para ampliar`}
                         onClick={(e) => clickThumb(n, e)} onDoubleClick={() => setPreview(n)}>
+                        {/* eslint-disable-next-line @next/next/no-img-element -- PNG que genera la API al vuelo */}
                         <img src={jobPageImageUrl(p.bookId!, n, "original", sizeDpi)} alt="" loading="lazy" decoding="async" />
                         <span className="pg-thumb-n">{n}</span>
                         {selected.has(n) && <span className="pg-thumb-check" aria-hidden><IconCheck /></span>}
@@ -424,6 +425,7 @@ export function ScopeView(p: Props) {
                       <button type="button" className="btn ghost pg-icon" aria-label="Cerrar el visor" onClick={() => setPreview(null)}><IconX /></button>
                     </div>
                   </div>
+                  {/* eslint-disable-next-line @next/next/no-img-element -- PNG que genera la API al vuelo */}
                   <img className="pg-preview-img" src={jobPageImageUrl(p.bookId, preview, "original")} alt={`Página ${preview} del libro`} />
                   <dl className="pg-preview-meta">
                     <dt>Tipo</dt><dd>{KIND[info.get(preview)?.kind ?? ""] ?? info.get(preview)?.kind}</dd>

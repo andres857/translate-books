@@ -166,7 +166,7 @@ export default function PlaygroundPage() {
         }
       });
     return () => { alive = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al cambiar de libro; books, scopeOpen y run se leen como estén entonces
   }, [bookId]);
 
   // estimación del alcance elegido (para la siguiente ejecución)
@@ -236,7 +236,6 @@ export default function PlaygroundPage() {
       }
     }, 1500);
     return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prep]);
 
   async function prepareUpload() {
@@ -273,7 +272,7 @@ export default function PlaygroundPage() {
       .catch(() => { if (alive) setPage(null); })
       .finally(() => { if (alive) setPageLoading(false); });
     return () => { alive = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- pageKey resume run, pageNo, bookId y prodAvailable
   }, [pageKey]);
 
   // ------------------------------------------------------------------ acciones

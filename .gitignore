@@ -22,3 +22,7 @@ backend/tests/output/
 node_modules/
 .next/
 *.tsbuildinfo
+
+# pruebas de navegador (Playwright)
+frontend/test-results/
+frontend/playwright-report/

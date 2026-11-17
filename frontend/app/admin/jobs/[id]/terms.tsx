@@ -52,7 +52,7 @@ export function Terms({ documentId }: { documentId: number }) {
       alive = false;
       if (timer) clearTimeout(timer);
     };
-  }, [documentId, disc?.status, load]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [documentId, disc?.status, load]); // eslint-disable-line react-hooks/exhaustive-deps -- solo el estado de disc decide si se sigue consultando
 
   // al terminar el descubrimiento (running → otro estado) se recargan las listas una sola vez. Va en un efecto,
   // no dentro de setDisc: las funciones de actualización de estado deben ser puras.

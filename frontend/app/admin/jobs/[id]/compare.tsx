@@ -132,12 +132,12 @@ export function Compare({ data, page, onPage, onChanged }: {
   // solo cuentan los bloques cuyo texto difiere del guardado (escribir y volver al original no bloquea)
   const hasDrafts = (info?.segments ?? []).some((x) => drafts[x.key] !== undefined && drafts[x.key] !== (x.translation ?? ""));
   const draftsRef = useRef(hasDrafts);
-  draftsRef.current = hasDrafts;
+  useEffect(() => { draftsRef.current = hasDrafts; }, [hasDrafts]);
 
   /** Cambio de página pedido por el usuario (índice, flechas de la barra, campo): con borradores, se confirma. */
   function go(n: number) {
     if (n === page) return;
-    if (draftsRef.current && !window.confirm(UNSAVED_CONFIRM)) {
+    if (hasDrafts && !window.confirm(UNSAVED_CONFIRM)) {
       setPageText(String(page));
       return;
     }
@@ -177,7 +177,7 @@ export function Compare({ data, page, onPage, onChanged }: {
     setUnsaved(false);
     setInfo((cur) => (cur && cur.number === page ? cur : null)); // no mostrar (ni editar) bloques de otra página
     load();
-  }, [load]);
+  }, [load, page]);
 
   // ← y → cambian de página, salvo al escribir en un campo
   useEffect(() => {
@@ -412,7 +412,7 @@ export function Compare({ data, page, onPage, onChanged }: {
                 <figure key={v} className="sheet">
                   <figcaption>{caption(v)}</figcaption>
                   <div className="paper">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    {/* eslint-disable-next-line @next/next/no-img-element -- PNG que genera la API al vuelo */}
                     <img src={src(v)} alt={`Página ${page}, ${v === "original" ? "original" : "resultado"}`}
                       width={info?.width} height={info?.height} />
                     {mark && <div className="mark" style={mark} />}

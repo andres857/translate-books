@@ -81,7 +81,7 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
       alive = false;
       clearTimeout(timer);
     };
-  }, [id, job?.status === "queued"]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [id, job?.status === "queued"]); // eslint-disable-line react-hooks/exhaustive-deps -- reinicia el sondeo al volver a «queued» (tras reanudar)
 
   async function act(action: "cancel" | "resume") {
     try {
@@ -167,7 +167,7 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
       {done && (
         <section className="card">
           <div className="result">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+            {/* eslint-disable-next-line @next/next/no-img-element -- PNG que genera la API al vuelo */}
             <img src={`/api/jobs/${job.id}/pages/1/preview?version=translated&dpi=60`} alt="Portada del libro" />
             <div>
               <h2>Resultado</h2>
