@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   addGlossary, addTerm, deleteGlossary, deleteTerm, discoverGlossary, editGlossary, glossaryDiscovery, listGlossary,
   listTerms, type GlossaryDiscovery, type GlossaryEntry, type ProtectedTerm,
@@ -41,10 +41,7 @@ export function Terms({ documentId }: { documentId: number }) {
       try {
         const d = await glossaryDiscovery(documentId);
         if (!alive) return;
-        setDisc((prev) => {
-          if (prev?.status === "running" && d.status !== "running") load();
-          return d;
-        });
+        setDisc(d);
         if (d.status === "running") timer = setTimeout(poll, 2000);
       } catch {
         /* sin estado: el botón sigue disponible */
@@ -56,6 +53,15 @@ export function Terms({ documentId }: { documentId: number }) {
       if (timer) clearTimeout(timer);
     };
   }, [documentId, disc?.status, load]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // al terminar el descubrimiento (running → otro estado) se recargan las listas una sola vez. Va en un efecto,
+  // no dentro de setDisc: las funciones de actualización de estado deben ser puras.
+  const prevStatus = useRef<GlossaryDiscovery["status"] | undefined>(undefined);
+  useEffect(() => {
+    const now = disc?.status;
+    if (prevStatus.current === "running" && now !== undefined && now !== "running") void load();
+    prevStatus.current = now;
+  }, [disc?.status, load]);
 
   async function discover() {
     try {
