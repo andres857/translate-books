@@ -90,7 +90,7 @@ def _chains(chars: list[PChar]) -> list[list[PChar]]:
 
 def _step(chain: list[PChar]) -> float:
     """Distancia típica entre letras consecutivas de la cadena."""
-    d = sorted(math.hypot(b.x - a.x, b.y - a.y) for a, b in zip(chain, chain[1:])
+    d = sorted(math.hypot(b.x - a.x, b.y - a.y) for a, b in zip(chain, chain[1:], strict=False)
                if not a.c.isspace() and not b.c.isspace())
     return d[len(d) // 2] if d else 0.6 * chain[0].size
 
@@ -98,7 +98,7 @@ def _step(chain: list[PChar]) -> float:
 def _text_of(chain: list[PChar]) -> str:
     step = _step(chain)
     parts = []
-    for a, b in zip(chain, chain[1:] + [None]):
+    for a, b in zip(chain, chain[1:] + [None], strict=True):
         parts.append(a.c)
         if b is not None and not a.c.isspace() and not b.c.isspace():
             if math.hypot(b.x - a.x, b.y - a.y) > 1.7 * step:  # hueco sin carácter de espacio
@@ -171,7 +171,7 @@ def build_curved_segments(page: pymupdf.Page, info, lines: list[dict],
 
 def _arc(path: list[tuple[float, float]]) -> list[float]:
     acc = [0.0]
-    for (x0, y0), (x1, y1) in zip(path, path[1:]):
+    for (x0, y0), (x1, y1) in zip(path, path[1:], strict=False):
         acc.append(acc[-1] + math.hypot(x1 - x0, y1 - y0))
     return acc
 

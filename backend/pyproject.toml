@@ -45,19 +45,6 @@ select = ["E", "F", "I", "B"]
 # prompts y f-strings largas), E741 (variables `l`) y E731 (lambdas asignadas).
 ignore = ["E501", "E741", "E731"]
 
-[tool.ruff.lint.per-file-ignores]
-# Avisos previos pendientes de revisar uno a uno (docs/backend-review/19-avisos-ruff-pendientes.md).
-"app/api/routes_files.py" = ["B904"]
-"app/api/routes_jobs.py" = ["B904"]
-"app/pipeline/analyze.py" = ["B023", "B905"]
-"app/pipeline/curved.py" = ["B905"]
-"app/pipeline/digitize.py" = ["B905"]
-"app/pipeline/fonts.py" = ["B007"]
-"app/pipeline/ocr.py" = ["B905", "F841"]
-"app/pipeline/translate.py" = ["B007", "B905"]
-"app/playground.py" = ["B007", "B023", "B905"]
-"tests/test_admin.py" = ["B905"]
-
 [tool.ruff.lint.flake8-bugbear]
 # Depends/File/Form/Query en los parámetros por defecto son el patrón de FastAPI, no un valor mutable compartido.
 extend-immutable-calls = ["fastapi.Depends", "fastapi.File", "fastapi.Form", "fastapi.Query", "fastapi.Body",

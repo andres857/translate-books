@@ -178,9 +178,7 @@ def ocr_segments(page: pymupdf.Page, info: PageInfo, lines: list[OcrLine] | None
         cx = (rect.x0 + rect.x1) / 2
         centered = abs(cx - info.width / 2) < 0.06 * info.width
         text = " ".join(ln.text for ln in para)
-        letters = [c for c in text if c.isalpha()]
-        upper = letters and sum(c.isupper() for c in letters) / len(letters) > 0.7
-        deltas = [b.rect.y1 - a.rect.y1 for a, b in zip(para, para[1:])]
+        deltas = [b.rect.y1 - a.rect.y1 for a, b in zip(para, para[1:], strict=False)]
         lh = statistics.median(deltas) / size if deltas else 1.2
         # grosor estimado por densidad de tinta (texto grueso de portada => Black)
         weight = "Black" if ink > 0.38 else "Bold" if ink > 0.26 else "Regular"
@@ -211,7 +209,6 @@ def erase_text_in_images(page: pymupdf.Page, rects: list[pymupdf.Rect]) -> int:
     """Borra el texto de las imágenes rasterizadas que lo contienen (inpainting) y reemplaza la imagen
     en el PDF. Devuelve cuántas imágenes se modificaron."""
     changed = 0
-    doc = page.parent
     for info in page.get_image_info(xrefs=True):
         xref = info.get("xref")
         if not xref:

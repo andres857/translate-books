@@ -122,7 +122,7 @@ def _create_job_from_bytes(db: Session, data: bytes, filename: str, rights_confi
         with pymupdf.open(stream=data, filetype="pdf") as pdf:
             encrypted, page_count = pdf.is_encrypted or pdf.needs_pass, len(pdf)
     except Exception:
-        raise HTTPException(400, "No pudimos abrir el PDF. Puede estar dañado.")
+        raise HTTPException(400, "No pudimos abrir el PDF. Puede estar dañado.") from None
     if encrypted:
         raise HTTPException(400, "El PDF está protegido con contraseña. Sube una versión sin protección.")
     if page_count == 0:

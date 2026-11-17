@@ -751,12 +751,12 @@ def translate_segments(
         pending = retry_list
 
     # repartir las traducciones conjuntas entre sus bloques
-    for key, group in joint.items():
+    for group in joint.values():
         lead = group[0]
         parts = re.split(r"<br>", lead.translation or "") if lead.translation else []
         if len(parts) == len(group) and all(p.strip() for p in parts):
             lead.protected, lead.placeholders = lead._joint_original
-            for g, part in zip(group, parts):
+            for g, part in zip(group, parts, strict=True):
                 g.translation = part.strip()
                 g.issues = list(lead.issues)
                 if g is not lead:

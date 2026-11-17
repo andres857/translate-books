@@ -362,7 +362,7 @@ def _split_fields(paragraphs: list[list[PLine]]) -> tuple[list[list[PLine]], set
             out.extend(run)
             continue
         current: list[PLine] = []
-        for line, kind in zip(para, kinds):
+        for line, kind in zip(para, kinds, strict=True):
             if kind in ("LV", "L") and current:
                 out.append(current)
                 fields.add(id(current))
@@ -467,10 +467,11 @@ def _runs_html(lines: list[PLine], dom: CharStyle, base_weight: int = 400,
         run_style: CharStyle | None = None
 
         def flush():
-            if not run:
+            # B023 falso positivo: flush() se llama dentro de la misma iteración y debe ver `run`/`run_style` actuales
+            if not run:  # noqa: B023
                 return
-            t = html.escape("".join(run), quote=False)
-            st = run_style
+            t = html.escape("".join(run), quote=False)  # noqa: B023
+            st = run_style  # noqa: B023
             if st.color != dom.color:
                 t = f'<span style="color:{st.color}">{t}</span>'
             if st.italic and not base_italic:
@@ -603,7 +604,7 @@ def extract_segments(page: pymupdf.Page, info: PageInfo) -> list[Segment]:
             rect |= l.rect
         baselines = [l.baseline for l in para]
         if len(baselines) > 1:
-            deltas = [b - a for a, b in zip(baselines, baselines[1:])]
+            deltas = [b - a for a, b in zip(baselines, baselines[1:], strict=False)]
             lh = max(1.0, min(2.2, statistics.median(deltas) / dom.size))
         else:
             lh = 1.2
@@ -665,7 +666,7 @@ def extract_segments(page: pymupdf.Page, info: PageInfo) -> list[Segment]:
     from app.pipeline.curved import PChar, build_curved_segments
 
     frag_chars: dict[int, list[PChar]] = {}
-    for sg, para in zip(segments, paragraphs):
+    for sg, para in zip(segments, paragraphs, strict=True):
         if sg in frags:
             frag_chars[id(sg)] = [
                 PChar(ch.c, ch.rect.x0, ch.origin_y, 1.0, 0.0, ch.style.size, ch.style.font,

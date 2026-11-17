@@ -186,7 +186,7 @@ def seconds_per_block(s) -> dict[tuple[str, str], float]:
     runs = s.scalars(select(PlaygroundRun).where(PlaygroundRun.status == "done")
                      .order_by(PlaygroundRun.id.desc()).limit(100))
     for run in runs:
-        for v, r in zip(run.variants or [], run.results or []):
+        for v, r in zip(run.variants or [], run.results or [], strict=False):
             n = len(r.get("segments") or {})
             if n and not r.get("error") and r.get("seconds"):
                 tot = acc.setdefault((v["provider"], v["model"]), [0.0, 0])
@@ -276,7 +276,7 @@ def detect_chapters(s, job: Job) -> list[dict]:
     repeats = Counter(k for k in {(n, norm(sg.source_text)) for n, _, sg in rows})
     repeats = Counter(text for _, text in repeats.elements())
     found: dict[int, tuple[float, str]] = {}
-    for n, height, sg in rows:
+    for n, _height, sg in rows:
         title = re.sub(r"\s+", " ", (sg.source_text or "").strip())
         if not title or len(title) > 90 or not any(ch.isalpha() for ch in title) or repeats[norm(title)] > 3:
             continue
@@ -663,10 +663,11 @@ def execute(run_id: int) -> None:
             def tick(done, total, i=i, cache=cache, label=label):
                 run.progress = round(100 * (i + (done / total if total else 1)) / n, 1)
                 state["done"], state["total"] = done, total
-                if time.monotonic() - saved[0] >= SAVE_EVERY:
+                # B023 falso positivo: run_variant llama a tick() dentro de esta iteración, nunca después
+                if time.monotonic() - saved[0] >= SAVE_EVERY:  # noqa: B023
                     caches[label] = dict(cache.data)
                     save()
-                    saved[0] = time.monotonic()
+                    saved[0] = time.monotonic()  # noqa: B023
 
             res = run_variant(v, run.task, rows, ctx, should_stop, tick, cache)
             if res["fatal"] == "balance":

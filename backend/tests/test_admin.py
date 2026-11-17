@@ -87,7 +87,7 @@ def test_edit_and_recompose_only_that_page(client, job_id):
     after = _page_texts(client.get(f"/api/jobs/{job_id}/download").content)
     assert len(after) == len(before)
     assert "ZQXJ" in after[number - 1] and "ZQXJ" not in before[number - 1]
-    for i, (a, b) in enumerate(zip(before, after), 1):
+    for i, (a, b) in enumerate(zip(before, after, strict=True), 1):
         if i != number:
             assert a == b, f"la página {i} no debía cambiar"
     # la corrección sigue guardada y el resto de bloques de la página conserva su traducción

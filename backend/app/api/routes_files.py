@@ -24,9 +24,9 @@ def _run(fn, *args, **kwargs):
     try:
         return fn(*args, **kwargs)
     except FileValidationError as e:
-        raise HTTPException(e.status, str(e))
+        raise HTTPException(e.status, str(e)) from e
     except FileNotFound:
-        raise HTTPException(404, "No encontramos ese archivo.")
+        raise HTTPException(404, "No encontramos ese archivo.") from None
     except StorageError as exc:
         raise storage_http_error(exc) from None
 

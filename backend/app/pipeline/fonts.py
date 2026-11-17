@@ -201,7 +201,7 @@ class FontResolver:
             font, covered = None, set()
             try:
                 for page in self.doc:
-                    for xref, ext, _t, bf, *_ in page.get_fonts(full=True):
+                    for xref, _ext, _t, bf, *_ in page.get_fonts(full=True):
                         if xref and bf.split("+", 1)[-1] == name:
                             buf = self.doc.extract_font(xref)[3]
                             if buf:

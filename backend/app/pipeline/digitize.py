@@ -131,7 +131,7 @@ def ocr_page_segments(img, number: int, lang: str, page_width: float) -> list[Se
         for r in rects[1:]:
             bbox |= r
         if len(rects) > 1:
-            pitch = statistics.median(b.y0 - a.y0 for a, b in zip(rects, rects[1:]))
+            pitch = statistics.median(b.y0 - a.y0 for a, b in zip(rects, rects[1:], strict=False))
             size = max(5.0, pitch / 1.2)
         else:
             size = max(5.0, rects[0].height * 0.82)
