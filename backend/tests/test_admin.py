@@ -445,3 +445,53 @@ def test_duplicate_seg_key_in_page_raises_integrity_error(client, job_id):
             s.commit()
         s.rollback()
         assert s.scalar(select(Segment.id).where(Segment.seg_key == "dup_s001")) is None
+
+
+# ---- #09: borrar un trabajo no carga sus páginas ni sus bloques (ON DELETE CASCADE en la BD)
+
+def _processed_job(client, sample_pdf) -> int:
+    from app import worker
+
+    r = client.post("/api/jobs", files={"file": ("sample.pdf", sample_pdf.read_bytes(), "application/pdf")},
+                    data={"rights_confirmed": "true"})
+    assert r.status_code == 200, r.text
+    while (claimed := worker.claim_job()) is not None:
+        worker.process(claimed)
+    return r.json()["id"]
+
+
+def _rows_of(job_id: int) -> tuple[int, int]:
+    from sqlalchemy import func, select
+
+    from app.db.models import Page, Segment
+    from app.db.session import SessionLocal
+
+    with SessionLocal() as s:
+        pages = s.scalar(select(func.count(Page.id)).where(Page.job_id == job_id))
+        segs = s.scalar(select(func.count(Segment.id)).join(Page).where(Page.job_id == job_id))
+    return pages, segs
+
+
+def test_delete_job_queries_do_not_grow_with_segments(client, sample_pdf):
+    from app.db.models import Page, Segment
+    from app.db.session import SessionLocal
+
+    from .conftest import count_queries
+
+    small, big = _processed_job(client, sample_pdf), _processed_job(client, sample_pdf)
+    with SessionLocal() as s:  # el segundo, con 20 páginas y 200 bloques más
+        for i in range(20):
+            s.add(Page(job_id=big, number=1000 + i, width=100, height=100, kind="digital", segments=[
+                Segment(seg_key=f"x{i}_{j}", bbox=[0, 0, 1, 1], source_text="a", source_html="a") for j in range(10)]))
+        s.commit()
+    small_rows, big_rows = _rows_of(small), _rows_of(big)
+    assert small_rows[1] > 0 and big_rows == (small_rows[0] + 20, small_rows[1] + 200)
+
+    with count_queries() as q_small:
+        assert client.delete(f"/api/jobs/{small}").status_code == 200
+    with count_queries() as q_big:
+        assert client.delete(f"/api/jobs/{big}").status_code == 200
+    assert q_big.count == q_small.count <= 25, q_big.statements
+    assert not any(st.lstrip().upper().startswith(("DELETE FROM PAGES", "DELETE FROM SEGMENTS"))
+                   for st in q_big.statements), q_big.statements
+    assert _rows_of(small) == _rows_of(big) == (0, 0)
