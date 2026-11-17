@@ -8,7 +8,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select, update
+from sqlalchemy import and_, case, func, select, update
 from sqlalchemy.orm import Session
 
 from app import playground as pg
@@ -65,14 +65,22 @@ def book_info(job: Job) -> dict:
 def summary(job_id: int, db: Session = Depends(get_db)):
     job = _job_or_404(db, job_id, None)  # router solo admin
     report = _report(job)
-    pages = []
-    for p in db.scalars(select(Page).where(Page.job_id == job_id).order_by(Page.number)):
-        scales = [s.fit_scale for s in p.segments if s.fit_scale]
-        pages.append({"number": p.number, "kind": p.kind, "needs_review": p.needs_review,
-                      "reasons": p.review_reasons or [], "segments": len(p.segments),
-                      "translated": sum(1 for s in p.segments if s.action == "translate" and s.translation),
-                      "edited": sum(1 for s in p.segments if s.edited),
-                      "min_scale": round(min(scales), 2) if scales else None})
+    # Una sola consulta agregada por página (antes, una carga de `p.segments` por página). Mismos criterios que
+    # en Python: traducido = acción «translate» con traducción no vacía; escala mínima ignorando NULL y 0.
+    seg = (select(Segment.page_id,
+                  func.count(Segment.id).label("n"),
+                  func.sum(case((and_(Segment.action == "translate", Segment.translation.is_not(None),
+                                      Segment.translation != ""), 1), else_=0)).label("translated"),
+                  func.sum(case((Segment.edited.is_(True), 1), else_=0)).label("edited"),
+                  func.min(case((Segment.fit_scale != 0, Segment.fit_scale))).label("min_scale"))
+           .group_by(Segment.page_id).subquery())
+    rows = db.execute(select(Page.number, Page.kind, Page.needs_review, Page.review_reasons,
+                             seg.c.n, seg.c.translated, seg.c.edited, seg.c.min_scale)
+                      .outerjoin(seg, seg.c.page_id == Page.id)
+                      .where(Page.job_id == job_id).order_by(Page.number))
+    pages = [{"number": r.number, "kind": r.kind, "needs_review": r.needs_review, "reasons": r.review_reasons or [],
+              "segments": r.n or 0, "translated": r.translated or 0, "edited": r.edited or 0,
+              "min_scale": round(r.min_scale, 2) if r.min_scale is not None else None} for r in rows]
     review = sum(1 for p in pages if p["needs_review"])
     return {
         "job": job_status(job),

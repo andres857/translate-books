@@ -300,3 +300,72 @@ def test_recompose_clears_done_pages_and_previous_error(client, job_id, monkeypa
     assert st["status"] == "done" and st["recompose_error"] is None and st["recomposing"] is False
     options = _job_options(job_id)
     assert "recompose" not in options and "recompose_error" not in options
+
+
+# ---- #05: el resumen agrega los bloques en una consulta (antes, una por página)
+
+@pytest.fixture
+def extra_pages(job_id):
+    """Añade al trabajo 20 páginas con bloques de borde (sin bloques, escala 0 o NULL, traducción vacía,
+    editados, acciones distintas de «translate») y las borra al terminar."""
+    from sqlalchemy import select
+
+    from app.db.models import Page, Segment
+    from app.db.session import SessionLocal
+
+    first = 1000
+    with SessionLocal() as s:
+        for i in range(20):
+            page = Page(job_id=job_id, number=first + i, width=100, height=100, kind="digital",
+                        needs_review=i % 3 == 0, review_reasons=["prueba"] if i % 3 == 0 else [])
+            for j in range(i % 4):  # la primera página queda sin bloques
+                page.segments.append(Segment(
+                    seg_key=f"x{i}_{j}", bbox=[0, 0, 1, 1], source_text="a", source_html="a",
+                    action=("translate", "keep", "translate", "review")[j],
+                    translation=(None, "b", "", "c")[j], edited=j == 1,
+                    fit_scale=(None, 0.0, 0.876, 0.5 + i / 100)[j]))
+            s.add(page)
+        s.commit()
+    yield
+    with SessionLocal() as s:
+        for page in s.scalars(select(Page).where(Page.job_id == job_id, Page.number >= first)):
+            s.delete(page)
+        s.commit()
+
+
+def test_summary_queries_do_not_grow_with_pages(client, job_id, request):
+    from .conftest import count_queries
+
+    with count_queries() as before:
+        n_before = len(client.get(f"/api/admin/jobs/{job_id}/summary").json()["pages"])
+    request.getfixturevalue("extra_pages")
+    with count_queries() as after:
+        n_after = len(client.get(f"/api/admin/jobs/{job_id}/summary").json()["pages"])
+    assert n_after == n_before + 20
+    assert after.count == before.count <= 8, after.statements
+    assert sum("FROM segments" in st for st in after.statements) == 1
+
+
+def test_summary_totals_match_per_page_computation(client, job_id, extra_pages):
+    """Los totales por página son los que calculaba el código anterior recorriendo `page.segments`."""
+    from sqlalchemy import select
+
+    from app.db.models import Page
+    from app.db.session import SessionLocal
+
+    with SessionLocal() as s:
+        expected = []
+        for p in s.scalars(select(Page).where(Page.job_id == job_id).order_by(Page.number)):
+            scales = [g.fit_scale for g in p.segments if g.fit_scale]
+            expected.append({"number": p.number, "kind": p.kind, "needs_review": p.needs_review,
+                             "reasons": p.review_reasons or [], "segments": len(p.segments),
+                             "translated": sum(1 for g in p.segments if g.action == "translate" and g.translation),
+                             "edited": sum(1 for g in p.segments if g.edited),
+                             "min_scale": round(min(scales), 2) if scales else None})
+    s = client.get(f"/api/admin/jobs/{job_id}/summary").json()
+    assert s["pages"] == expected
+    assert any(p["segments"] == 0 and p["min_scale"] is None for p in s["pages"])
+    assert s["totals"]["segments"] == sum(p["segments"] for p in expected)
+    assert s["totals"]["edited"] == sum(p["edited"] for p in expected)
+    assert s["totals"]["pages"] == len(expected)
+    assert s["totals"]["review"] == sum(p["needs_review"] for p in expected)
