@@ -1,0 +1,50 @@
+# Revisión del frontend (noviembre 2026)
+
+Revisión de `frontend/` (Next.js 16.4.5, App Router, React 19) sin cambios de código. Cada problema tiene su
+ficha (`NN-slug.md`: qué pasa, cómo reproducirlo, impacto y corrección propuesta) y su archivo de aceptación
+(`NN-slug.aceptacion.md`: casillas con resultados verificables). Las casillas empiezan vacías (`- [ ]`) y se
+marcan (`- [x]`) al comprobarlas tras el arreglo.
+
+## Línea base
+
+- `npx tsc --noEmit`: sin errores.
+- `node ../handoff/check.mjs app lib`: `Problemas: 0`.
+- `npm run build`: correcto, 13 rutas dinámicas + proxy.
+- ESLint: no instalado. Tests: no hay (ver #14).
+
+## Problemas
+
+| # | Severidad | Problema | Aceptación |
+|---|---|---|---|
+| 01 | Crítico | [Redirección abierta en el `?next=` del login](01-open-redirect-login.md) | [criterios](01-open-redirect-login.aceptacion.md) |
+| 02 | Alto | [Enlaces a Configuración visibles para usuarios sin rol admin](02-enlaces-configuracion-usuario.md) | [criterios](02-enlaces-configuracion-usuario.aceptacion.md) |
+| 03 | Medio | [Glosario y términos: el formulario se vacía aunque falle el guardado](03-terms-pierde-formulario-en-error.md) | [criterios](03-terms-pierde-formulario-en-error.aceptacion.md) |
+| 04 | Medio | [Vista Libro: cambiar de página descarta las correcciones sin guardar](04-compare-descarta-borradores.md) | [criterios](04-compare-descarta-borradores.aceptacion.md) |
+| 05 | Medio | [Respuestas antiguas sobrescriben la vista actual (carreras)](05-carreras-en-cargas.md) | [criterios](05-carreras-en-cargas.aceptacion.md) |
+| 06 | Bajo | [Progreso del libro: consulta cada 4 s para siempre ante un 404](06-polling-infinito-404.md) | [criterios](06-polling-infinito-404.aceptacion.md) |
+| 07 | Bajo | [Recomponer: el bucle de espera sigue tras salir de la vista](07-recompose-tras-desmontar.md) | [criterios](07-recompose-tras-desmontar.aceptacion.md) |
+| 08 | Bajo | [Las descargas que fallan muestran JSON en crudo](08-descargas-muestran-json.md) | [criterios](08-descargas-muestran-json.aceptacion.md) |
+| 09 | Bajo | [Trabajo en `paused`: sin botón «Reanudar» y sondeo sin fin](09-estado-paused-sin-reanudar.md) | [criterios](09-estado-paused-sin-reanudar.aceptacion.md) |
+| 10 | Bajo | [Efecto secundario dentro de la función de `setDisc`](10-efecto-dentro-de-setstate.md) | [criterios](10-efecto-dentro-de-setstate.aceptacion.md) |
+| 11 | Medio | [Todas las páginas son de cliente: el HTML del servidor solo trae «Cargando…»](11-todo-en-cliente.md) | [criterios](11-todo-en-cliente.aceptacion.md) |
+| 12 | Medio | [Faltan `error.tsx` y `not-found.tsx`](12-sin-error-not-found.md) | [criterios](12-sin-error-not-found.aceptacion.md) |
+| 13 | Medio | [Archivos con demasiadas responsabilidades](13-archivos-gigantes.md) | [criterios](13-archivos-gigantes.aceptacion.md) |
+| 14 | Medio | [Sin ESLint ni tests: hay `eslint-disable` que no comprueba nadie](14-sin-eslint-ni-tests.md) | [criterios](14-sin-eslint-ni-tests.aceptacion.md) |
+| 15 | Bajo | [Todas las pestañas del navegador tienen el mismo título](15-titulos-por-pagina.md) | [criterios](15-titulos-por-pagina.aceptacion.md) |
+
+## Orden recomendado
+
+1. #01 y #02: arreglos pequeños y localizados (seguridad y permisos en la UI).
+2. #03, #04 y #05: pérdida de datos y carreras en la revisión del admin.
+3. #06, #07, #09 y #10: robustez menor. #08 requiere decidir el enfoque (ver Notas de su ficha).
+4. #14: ESLint y smoke tests, antes de tocar la estructura.
+5. #12, luego #11, #13 y #15: cambios estructurales graduales, un commit por paso.
+
+## Comportamientos de regresión
+
+Se repasan a mano tras cada arreglo (hasta que exista el smoke test del #14):
+
+- Login, cambio obligatorio de contraseña, logout y redirección con `?next=`.
+- `user`: ver sus libros, subir un PDF, ver el progreso, cancelar, reanudar y descargar.
+- `admin`: borrar un libro, la vista de revisión (Libro, Glosario y términos, Resumen), corregir y recomponer
+  una página, Configuración, Usuarios y Playground.
