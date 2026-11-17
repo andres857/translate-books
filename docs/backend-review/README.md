@@ -73,7 +73,7 @@ y `translation_cache` no tienen relaciones. Diferencias modelo/esquema: el CHECK
 | 16 | Bajo | [Sesiones, intentos de login, eventos y caché crecen sin límite](16-tablas-crecen-sin-limite.md) | [criterios](16-tablas-crecen-sin-limite.aceptacion.md) | resuelto |
 | 17 | Bajo | [El CHECK del rol existe en la BD pero no en el modelo](17-check-rol-solo-en-migracion.md) | [criterios](17-check-rol-solo-en-migracion.aceptacion.md) | resuelto |
 | 18 | Bajo | [Variables reutilizadas y un diccionario de locks que crece sin límite](18-estilo-menor.md) | [criterios](18-estilo-menor.aceptacion.md) | resuelto |
-| 19 | Bajo | [Avisos de ruff previos silenciados por archivo](19-avisos-ruff-pendientes.md) | [criterios](19-avisos-ruff-pendientes.aceptacion.md) | abierto |
+| 19 | Bajo | [Avisos de ruff previos silenciados por archivo](19-avisos-ruff-pendientes.md) | [criterios](19-avisos-ruff-pendientes.aceptacion.md) | resuelto |
 | 20 | Bajo | [Al borrar un libro, glosario, términos e intentos se borran fila a fila](20-borrado-glosario-fila-a-fila.md) | [criterios](20-borrado-glosario-fila-a-fila.aceptacion.md) | resuelto |
 
 ## Preguntas de negocio (se hacen antes de la ficha)

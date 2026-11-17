@@ -2,7 +2,7 @@
 
 - **Severidad:** Bajo
 - **Categoría:** Herramientas
-- **Estado:** abierto
+- **Estado:** resuelto · commit(s) `26b9542`, `8f0a64c`
 - **Ubicación:** `backend/pyproject.toml` (`[tool.ruff.lint.per-file-ignores]`); `app/api/routes_files.py:27,29`, `app/api/routes_jobs.py:119`, `app/pipeline/analyze.py`, `curved.py`, `digitize.py`, `fonts.py:204`, `ocr.py:183,215`, `translate.py:754`, `app/playground.py:271,662`, `tests/test_admin.py:90`
 - **Aceptación:** [19-avisos-ruff-pendientes.aceptacion.md](19-avisos-ruff-pendientes.aceptacion.md)
 
@@ -40,3 +40,25 @@ fijar las variables del bucle como argumento por defecto, quitar las variables s
 ## Notas
 
 Detectado al cerrar el #15; no se arregla allí porque no son cambios mecánicos.
+
+- Decisión (B904): `from e` en `FileValidationError` (es el error de negocio que se muestra) y `from None` en
+  `FileNotFound` y en el PDF que PyMuPDF no abre (el detalle interno no aporta). Solo cambia el encadenamiento
+  del traceback; código y texto de las respuestas HTTP son los mismos.
+- Decisión (B905): `strict=True` solo donde las longitudes coinciden por construcción o ya se comprueban:
+  `zip(para, kinds)` y `zip(segments, paragraphs)` en `analyze.py` (una entrada por párrafo, sin `continue`),
+  `zip(chain, chain[1:] + [None])` en `curved.py`, `zip(group, parts)` en `translate.py` (tras
+  `len(parts) == len(group)`) y `zip(before, after)` en `tests/test_admin.py` (tras el assert de longitud).
+  `strict=False` en los pares consecutivos `zip(x, x[1:])` (miden distinto a propósito) y en
+  `zip(run.variants, run.results)` de `playground.py` (una evaluación en curso tiene menos resultados).
+- Decisión (B023): los 5 avisos son falsos positivos y quedan con `# noqa: B023` y su motivo. `flush()` en
+  `_runs_html` se llama dentro de la misma iteración y debe ver los valores *actuales* de `run`/`run_style`
+  (que el bucle interno reasigna): fijarlos como argumento por defecto cambiaría el resultado. `tick()` en
+  `playground.py` se pasa a `run_variant`, que lo llama de forma síncrona en la misma iteración.
+- B007/F841: `_ext`, `_height`, `joint.values()` en lugar de `.items()`; se quitan `letters`/`upper` y `doc`
+  de `ocr.py` (cálculos sin efectos; `_erase_in_image` obtiene su propio `page.parent`).
+- Decisión (BLE): se activan `BLE` y `RUF100`. Ruff quitó 15 `# noqa: BLE001` innecesarios (esos `except`
+  registran con `log.exception`/`exc_info` o relanzan) y los noqa sin efecto `F401` (`import pymupdf.layout`) y
+  `E731` (regla ya ignorada); los comentarios explicativos se conservan. El `except Exception` al abrir el PDF
+  subido (`routes_jobs.py`) lleva `# noqa: BLE001` con motivo: cualquier fallo de PyMuPDF debe dar un 400.
+  Quedan 25 `# noqa: BLE001`, todos comprobados por RUF100.
+- Sin cambios en el contrato de la API: el frontend no necesita ajuste.
