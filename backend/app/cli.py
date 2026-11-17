@@ -6,6 +6,7 @@ Uso:
   python -m app.cli analyze libro.pdf [--pages 1-5]     # muestra segmentos detectados sin traducir
   python -m app.cli auth-recover --email admin@ejemplo.com [--name "Nombre"]   # recuperar el acceso de admin
   python -m app.cli active-jobs                         # trabajos en curso (antes de reiniciar el worker)
+  python -m app.cli purge [--dry-run]                   # borra sesiones cerradas, límites vencidos y eventos viejos
 """
 from __future__ import annotations
 
@@ -134,9 +135,11 @@ def main(argv=None) -> None:
     r.add_argument("--email", required=True)
     r.add_argument("--name", default="Administrador")
     sub.add_parser("active-jobs", help="lista los trabajos que no han terminado")
+    pu = sub.add_parser("purge", help="borra sesiones cerradas, ventanas de rate limit vencidas y eventos viejos")
+    pu.add_argument("--dry-run", action="store_true", help="solo cuenta las filas que borraría")
     args = ap.parse_args(argv)
     {"analyze": cmd_analyze, "translate": cmd_translate, "epub": cmd_epub, "auth-recover": cmd_auth_recover,
-     "active-jobs": cmd_active_jobs}[args.cmd](args)
+     "active-jobs": cmd_active_jobs, "purge": cmd_purge}[args.cmd](args)
 
 
 def cmd_auth_recover(args) -> None:
@@ -173,6 +176,20 @@ def cmd_active_jobs(_args) -> None:
     with SessionLocal() as db:
         rows = db.scalars(select(Job).where(Job.status.in_(("queued", "running", "paused")))).all()
         print("\n".join(f"{j.id} {j.status} {j.stage}" for j in rows) or "sin trabajos activos")
+
+
+def cmd_purge(args) -> None:
+    """Sin `migrate()`: con `--dry-run` no escribe nada en la BD."""
+    from app.auth.purge import purge
+    from app.db.session import session_scope
+
+    with session_scope() as db:
+        counts = purge(db, dry_run=args.dry_run)
+        if args.dry_run:
+            db.rollback()
+    verb = "se borrarían" if args.dry_run else "borradas"
+    for table, n in counts.items():
+        print(f"{table}: {n} {verb}")
 
 
 def cmd_epub(args) -> None:

@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     # peticiones llegan con su IP. Desde ellas la IP del cliente es desconocida (Next no añade
     # X-Forwarded-For), así que el límite por IP no se aplica; siguen el de correo y el total.
     trusted_proxies: str = ""
+    # purga (`python -m app.cli purge`): sesiones revocadas o caducadas hace más de N días y eventos de seguridad
+    auth_sessions_retention_days: float = 30
+    auth_events_retention_days: float = 180
 
     max_upload_mb: int = 200
     translation_concurrency: int = 10

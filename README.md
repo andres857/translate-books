@@ -111,6 +111,11 @@ La aplicación pide correo y contraseña. No hay autorregistro: las cuentas las 
 - **Recuperación** (sin acceso de admin):
   `docker compose exec api python -m app.cli auth-recover --email tu@correo` crea o reactiva la cuenta como
   admin y muestra una contraseña temporal nueva.
+- **Purga de datos de login**: `docker compose exec api python -m app.cli purge` borra las sesiones revocadas
+  o caducadas hace más de 30 días (`AUTH_SESSIONS_RETENTION_DAYS`), las ventanas del límite de intentos ya
+  vencidas y los eventos de la bitácora de seguridad de más de 180 días (`AUTH_EVENTS_RETENTION_DAYS`).
+  Con `--dry-run` solo muestra cuántas filas borraría por tabla. La caché de traducciones no se purga. No corre
+  sola: prográmala si quieres (p. ej. un cron diario en el host con ese mismo comando).
 
 ## Administración (`/admin`)
 
@@ -146,6 +151,7 @@ Los estilos de toda la interfaz salen de `handoff/tokens.css` (copiado a `fronte
 | `ADMIN_BOOTSTRAP_EMAIL` / `ADMIN_BOOTSTRAP_PASSWORD` / `ADMIN_BOOTSTRAP_NAME` | Admin inicial (ver «Acceso»). |
 | `TRUSTED_PROXIES` | Redes del proxy propio (el frontend). Desde ellas la IP del usuario es desconocida y el límite de intentos usa solo el correo y el total. El compose usa las redes internas de Docker. |
 | `SESSION_MAX_HOURS` / `SESSION_IDLE_MINUTES` / `COOKIE_SECURE` | Duración de la sesión y cookie `Secure` (`auto`, `true`, `false`). |
+| `AUTH_SESSIONS_RETENTION_DAYS` / `AUTH_EVENTS_RETENTION_DAYS` | Días que `app.cli purge` conserva las sesiones revocadas o caducadas (30) y los eventos de seguridad (180). |
 | `EBOOK_CONVERT_BIN` | Ruta de `ebook-convert` (Calibre) si no está en el `PATH`. |
 
 ## Almacenamiento de archivos (S3 + CDN)

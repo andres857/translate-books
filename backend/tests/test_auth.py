@@ -384,3 +384,106 @@ def test_client_forwarded_for_is_ignored(app, trusted_proxy):
     with session_scope() as db:
         assert db.get(AuthRateLimit, "ip:198.51.100.7") is None
         assert db.get(AuthRateLimit, "ip:203.0.113.20").count == 1
+
+
+def _old_session(db, user_id: int, *, revoked_days: float | None = None, expired_days: float | None = None) -> int:
+    """Sesión con `revoked_at`/`expires_at` hace N días (None = no revocada / vigente 8 h)."""
+    import secrets
+
+    from app.auth import sessions
+    from app.db.models import AuthSession
+
+    t = sessions.now()
+    expires = t - timedelta(days=expired_days) if expired_days is not None else t + timedelta(hours=8)
+    s = AuthSession(token_hash=secrets.token_hex(32), csrf_hash="x", user_id=user_id, kind="normal",
+                    created_at=expires - timedelta(hours=8), last_seen_at=expires - timedelta(hours=8),
+                    expires_at=expires,
+                    revoked_at=t - timedelta(days=revoked_days) if revoked_days is not None else None)
+    db.add(s)
+    db.flush()
+    return s.id
+
+
+def test_purge_sessions_older_than_threshold(app):
+    from app.auth.purge import purge
+    from app.db.models import AuthSession
+    from app.db.session import session_scope
+
+    user = make_user()
+    live = auth_client(app, "user", user=user)
+    with session_scope() as db:
+        old = [_old_session(db, user.id, revoked_days=31), _old_session(db, user.id, expired_days=31)]
+        keep = [_old_session(db, user.id, revoked_days=29), _old_session(db, user.id, expired_days=29),
+                _old_session(db, user.id)]
+    with session_scope() as db:
+        assert purge(db, dry_run=True)["auth_sessions"] >= 2
+    with session_scope() as db:
+        assert all(db.get(AuthSession, i) for i in old + keep)  # dry-run no borra
+    with session_scope() as db:
+        assert purge(db)["auth_sessions"] >= 2
+    with session_scope() as db:
+        assert [db.get(AuthSession, i) for i in old] == [None, None]
+        assert all(db.get(AuthSession, i) for i in keep)
+    assert live.get("/api/auth/me").status_code == 200  # la sesión vigente sigue sirviendo
+
+
+def test_purge_events_and_expired_rate_limits(app):
+    from app.auth.purge import purge
+    from app.auth.sessions import now
+    from app.db.models import AuthRateLimit, AuthSecurityEvent
+    from app.db.session import session_scope
+
+    t = now()
+    with session_scope() as db:
+        old = AuthSecurityEvent(type="test_purge", detail={}, created_at=t - timedelta(days=181))
+        recent = AuthSecurityEvent(type="test_purge", detail={}, created_at=t - timedelta(days=179))
+        db.add_all([old, recent,
+                    AuthRateLimit(bucket="test:vencida", window_start=t - timedelta(minutes=16), count=3),
+                    AuthRateLimit(bucket="test:vigente", window_start=t - timedelta(minutes=14), count=3)])
+        db.flush()
+        old_id, recent_id = old.id, recent.id
+    with session_scope() as db:
+        counts = purge(db, dry_run=True)
+        assert counts["auth_security_events"] >= 1 and counts["auth_rate_limits"] >= 1
+        assert "translation_cache" not in counts
+    with session_scope() as db:
+        assert db.get(AuthSecurityEvent, old_id) and db.get(AuthRateLimit, "test:vencida")
+        purge(db)
+    with session_scope() as db:
+        assert db.get(AuthSecurityEvent, old_id) is None and db.get(AuthSecurityEvent, recent_id)
+        assert db.get(AuthRateLimit, "test:vencida") is None and db.get(AuthRateLimit, "test:vigente")
+
+
+def test_purge_retention_from_settings(app, monkeypatch):
+    from app.auth.purge import purge
+    from app.config import get_settings
+    from app.db.models import AuthSession
+    from app.db.session import session_scope
+
+    user = make_user()
+    with session_scope() as db:
+        sid = _old_session(db, user.id, revoked_days=10)
+    monkeypatch.setattr(get_settings(), "auth_sessions_retention_days", 5)
+    with session_scope() as db:
+        purge(db)
+    with session_scope() as db:
+        assert db.get(AuthSession, sid) is None
+
+
+def test_cli_purge_dry_run_deletes_nothing(app, capsys):
+    from sqlalchemy import func, select
+
+    from app.cli import main
+    from app.db.models import AuthSession
+    from app.db.session import session_scope
+
+    user = make_user()
+    with session_scope() as db:
+        sid = _old_session(db, user.id, revoked_days=40)
+        before = db.scalar(select(func.count()).select_from(AuthSession))
+    main(["purge", "--dry-run"])
+    out = capsys.readouterr().out
+    assert "auth_sessions:" in out and "se borrarían" in out and "translation_cache" not in out
+    with session_scope() as db:
+        assert db.get(AuthSession, sid) is not None
+        assert db.scalar(select(func.count()).select_from(AuthSession)) == before
