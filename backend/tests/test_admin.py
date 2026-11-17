@@ -369,3 +369,79 @@ def test_summary_totals_match_per_page_computation(client, job_id, extra_pages):
     assert s["totals"]["edited"] == sum(p["edited"] for p in expected)
     assert s["totals"]["pages"] == len(expected)
     assert s["totals"]["review"] == sum(p["needs_review"] for p in expected)
+
+
+# ---- #10: índices únicos contra duplicados en glosario, términos y bloques
+
+def _no_db_text(r) -> None:
+    body = r.text.lower()
+    assert r.json()["detail"] == "Ese término ya existe."
+    assert not any(t in body for t in ("unique", "constraint", "sqlite", "integrity", "glossary", "protected_terms"))
+
+
+@pytest.mark.parametrize("scope", ["global", "book"])
+def test_glossary_duplicate_is_409(client, job_id, scope):
+    from sqlalchemy import func, select
+
+    from app.db.models import GlossaryEntry
+    from app.db.session import SessionLocal
+
+    doc_id = client.get(f"/api/jobs/{job_id}").json()["document_id"] if scope == "book" else None
+    first = client.post("/api/glossary", json={"source": "Ascendant", "target": "Ascendente", "document_id": doc_id})
+    assert first.status_code == 200, first.text
+    dup = client.post("/api/glossary", json={"source": " ascendant ", "target": "Otro", "document_id": doc_id})
+    assert dup.status_code == 409
+    _no_db_text(dup)
+    with SessionLocal() as s:
+        n = s.scalar(select(func.count(GlossaryEntry.id)).where(
+            func.lower(GlossaryEntry.source) == "ascendant", GlossaryEntry.document_id.is_(doc_id)
+            if doc_id is None else GlossaryEntry.document_id == doc_id))
+    assert n == 1
+    client.delete(f"/api/glossary/{first.json()['id']}")
+
+
+def test_glossary_same_term_global_and_per_book_is_allowed(client, job_id):
+    doc_id = client.get(f"/api/jobs/{job_id}").json()["document_id"]
+    a = client.post("/api/glossary", json={"source": "Midheaven", "target": "Medio cielo"})
+    b = client.post("/api/glossary", json={"source": "Midheaven", "target": "MC", "document_id": doc_id})
+    assert a.status_code == b.status_code == 200
+    for r in (a, b):
+        client.delete(f"/api/glossary/{r.json()['id']}")
+
+
+@pytest.mark.parametrize("scope", ["global", "book"])
+def test_protected_term_duplicate_is_409(client, job_id, scope):
+    from sqlalchemy import func, select
+
+    from app.db.models import ProtectedTerm
+    from app.db.session import SessionLocal
+
+    doc_id = client.get(f"/api/jobs/{job_id}").json()["document_id"] if scope == "book" else None
+    first = client.post("/api/protected-terms", json={"term": "Chiron", "document_id": doc_id})
+    assert first.status_code == 200, first.text
+    dup = client.post("/api/protected-terms", json={"term": " Chiron ", "category": "term", "document_id": doc_id})
+    assert dup.status_code == 409
+    _no_db_text(dup)
+    with SessionLocal() as s:
+        n = s.scalar(select(func.count(ProtectedTerm.id)).where(
+            ProtectedTerm.term == "Chiron", ProtectedTerm.document_id.is_(doc_id)
+            if doc_id is None else ProtectedTerm.document_id == doc_id))
+    assert n == 1
+    client.delete(f"/api/protected-terms/{first.json()['id']}")
+
+
+def test_duplicate_seg_key_in_page_raises_integrity_error(client, job_id):
+    from sqlalchemy import select
+    from sqlalchemy.exc import IntegrityError
+
+    from app.db.models import Page, Segment
+    from app.db.session import SessionLocal
+
+    with SessionLocal() as s:
+        page_id = s.scalar(select(Page.id).where(Page.job_id == job_id, Page.number == 1))
+        for _ in range(2):
+            s.add(Segment(page_id=page_id, seg_key="dup_s001", bbox=[0, 0, 1, 1], source_text="a", source_html="a"))
+        with pytest.raises(IntegrityError):
+            s.commit()
+        s.rollback()
+        assert s.scalar(select(Segment.id).where(Segment.seg_key == "dup_s001")) is None

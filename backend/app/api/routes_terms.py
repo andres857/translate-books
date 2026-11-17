@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import glossary_service
@@ -37,6 +38,15 @@ def _check_document(db: Session, document_id: int | None) -> None:
         raise HTTPException(400, "Ese libro no existe.")
 
 
+def _commit_new(db: Session) -> None:
+    """Guarda una entrada nueva; si el índice único la rechaza (ya existe), 409 sin el texto de la BD."""
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "Ese término ya existe.") from None
+
+
 @router.get("/protected-terms")
 def list_terms(document_id: int | None = None, db: Session = Depends(get_db)):
     """Sin document_id: todos. Con document_id: los globales y los de ese libro."""
@@ -53,7 +63,7 @@ def add_term(body: TermIn, db: Session = Depends(get_db)):
     t = ProtectedTerm(term=body.term.strip(), category=body.category.upper(), origin="manual",
                       document_id=body.document_id)
     db.add(t)
-    db.commit()
+    _commit_new(db)
     return {"id": t.id}
 
 
@@ -81,7 +91,7 @@ def add_glossary(body: GlossaryIn, db: Session = Depends(get_db)):
     g = GlossaryEntry(source=body.source.strip(), target=body.target.strip(), document_id=body.document_id,
                       origin="manual", note=(body.note or "").strip() or None)
     db.add(g)
-    db.commit()
+    _commit_new(db)
     return {"id": g.id}
 
 

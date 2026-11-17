@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy import false as sa_false
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -83,6 +83,8 @@ class Page(Base):
 
 class Segment(Base):
     __tablename__ = "segments"
+    # una clave repetida en la misma página haría que una traducción pise a otra
+    __table_args__ = (Index("uq_segments_page_seg_key", "page_id", "seg_key", unique=True),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     page_id: Mapped[int] = mapped_column(ForeignKey("pages.id"), index=True)
@@ -119,6 +121,9 @@ class ProtectedTerm(Base):
     origin: Mapped[str] = mapped_column(String(16), default="manual")  # auto | manual
     document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id"))  # None = global
 
+    # un término por libro (o global, document_id NULL → 0); el Protector distingue mayúsculas
+    __table_args__ = (Index("uq_protected_terms_doc_term", func.coalesce(document_id, 0), term, unique=True),)
+
 
 class GlossaryEntry(Base):
     __tablename__ = "glossary"
@@ -130,6 +135,9 @@ class GlossaryEntry(Base):
     origin: Mapped[str] = mapped_column(String(16), default="manual", server_default="manual")  # auto | manual
     category: Mapped[str | None] = mapped_column(String(32))
     note: Mapped[str | None] = mapped_column(Text)
+
+    # una entrada por término y libro (o global, document_id NULL → 0), sin distinguir mayúsculas; abarca auto y manual
+    __table_args__ = (Index("uq_glossary_doc_source", func.coalesce(document_id, 0), func.lower(source), unique=True),)
 
 
 class TranslationCache(Base):
