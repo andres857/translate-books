@@ -155,11 +155,17 @@ export function Compare({ data, page, onPage, onChanged }: {
     setOpen(allOpen ? (current >= 0 ? { [current]: true } : {}) : Object.fromEntries(groups.map((_, i) => [i, true])));
   }
 
+  // cada carga lleva un número: si mientras tanto se pidió otra (otra página), su respuesta se ignora
+  const loadSeq = useRef(0);
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
     try {
-      setInfo(await getSegments(job.id, page));
+      const segments = await getSegments(job.id, page);
+      if (seq !== loadSeq.current) return;
+      setInfo(segments);
       setError(null);
     } catch (e) {
+      if (seq !== loadSeq.current) return;
       setInfo(null);
       setError((e as Error).message);
     }
@@ -169,6 +175,7 @@ export function Compare({ data, page, onPage, onChanged }: {
     setDrafts({});
     setNotice(null);
     setUnsaved(false);
+    setInfo((cur) => (cur && cur.number === page ? cur : null)); // no mostrar (ni editar) bloques de otra página
     load();
   }, [load]);
 

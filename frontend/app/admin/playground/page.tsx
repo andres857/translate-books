@@ -149,9 +149,11 @@ export default function PlaygroundPage() {
     setChapter("");
     const count = books.find((b) => b.id === bookId)?.page_count ?? 1;
     const choosing = scopeOpen && !run; // eligiendo en la vista inicial: alcance por defecto según haya capítulos
+    let alive = true; // si se cambia de libro antes de que respondan, los capítulos del anterior se descartan
     listChapters(bookId)
       .catch(() => [] as Chapter[])
       .then((chs) => {
+        if (!alive) return;
         setChapters(chs);
         if (!choosing) return;
         if (chs.length) {
@@ -163,6 +165,7 @@ export default function PlaygroundPage() {
           setPagesSpec(`1-${Math.min(10, count)}`);
         }
       });
+    return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookId]);
 
