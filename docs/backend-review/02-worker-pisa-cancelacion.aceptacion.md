@@ -17,7 +17,7 @@ Ficha: [02-worker-pisa-cancelacion.md](02-worker-pisa-cancelacion.md). Marca cad
 
 - [x] `cd backend && .venv/bin/python -m pytest -q -m "not slow and not s3"` termina en verde (ningún test que pasaba antes falla; los nuevos de esta ficha pasan).
   - Verificado: 149 passed, 1 skipped, 5 deselected (antes 140 passed + 9 nuevos).
-- [ ] Si la ficha añade una migración: `alembic upgrade head` → `alembic downgrade -1` → `alembic upgrade head` sin errores sobre una **copia** de `data/app.db`, y `PRAGMA foreign_key_check` vacío después. Si no migra, escribir «sin migración».
+- [x] Si la ficha añade una migración: `alembic upgrade head` → `alembic downgrade -1` → `alembic upgrade head` sin errores sobre una **copia** de `data/app.db`, y `PRAGMA foreign_key_check` vacío después. Si no migra, escribir «sin migración».
   - Verificado: sin migración.
 - [ ] Desde que exista el #15: `ruff check app tests` sin errores y el test de `alembic check` en verde.
   - Pendiente de verificación manual: el #15 sigue abierto (ruff y `alembic check` no están instalados).
