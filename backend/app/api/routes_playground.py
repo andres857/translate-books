@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Annotated, Literal
 
 import pymupdf
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -25,7 +26,7 @@ def prompts():
 # ------------------------------------------------------------------ borradores
 
 class DraftIn(BaseModel):
-    task: str | None = None
+    task: Literal["translate", "correct"] | None = None  # pg.TASKS
     name: str | None = Field(default=None, max_length=120)
     text: str | None = Field(default=None, max_length=40000)
 
@@ -141,22 +142,22 @@ def book_pages(job_id: int, db: Session = Depends(get_db)):
 # ------------------------------------------------------------------ ejecuciones
 
 class VariantIn(BaseModel):
-    provider: str
-    model: str | None = None
-    thinking: str | None = None
-    prompt: int | str | None = "production"
-    prompt_name: str | None = None
+    provider: str = Field(max_length=32)
+    model: str | None = Field(default=None, max_length=64)
+    thinking: str | None = Field(default=None, max_length=32)
+    prompt: int | Annotated[str, Field(max_length=32)] | None = "production"
+    prompt_name: str | None = Field(default=None, max_length=120)
 
 
 class ScopeIn(BaseModel):
     job_id: int
-    scope: str = "pages"  # page | pages | chapter | book
-    pages: str = ""
+    scope: Literal["page", "pages", "chapter", "book"] = "pages"  # pg.SCOPES
+    pages: str = Field(default="", max_length=2000)
     variants: list[VariantIn]
 
 
 class RunIn(ScopeIn):
-    chapter: str | None = None
+    chapter: str | None = Field(default=None, max_length=512)
     confirm: bool = False  # obligatorio cuando la estimación pide confirmar (libro entero, muchos bloques)
 
 

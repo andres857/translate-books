@@ -138,7 +138,7 @@ def test_azw3_download(client, job_id, monkeypatch):
     assert r.status_code == 200, r.text
     assert r.content[60:68] == b"BOOKMOBI" and len(r.content) > 2000
     assert client.get(f"/api/jobs/{job_id}/download?format=epub").status_code == 200
-    assert client.get(f"/api/jobs/{job_id}/download?format=mobi").status_code == 400
+    assert client.get(f"/api/jobs/{job_id}/download?format=mobi").status_code == 422
 
 
 def test_azw3_without_calibre(client, job_id, monkeypatch):
@@ -495,3 +495,40 @@ def test_delete_job_queries_do_not_grow_with_segments(client, sample_pdf):
     assert not any(st.lstrip().upper().startswith(("DELETE FROM PAGES", "DELETE FROM SEGMENTS"))
                    for st in q_big.statements), q_big.statements
     assert _rows_of(small) == _rows_of(big) == (0, 0)
+
+
+def test_protected_term_category_must_be_known(client):
+    """#11: la categoría es una de las que pinta la vista de términos (en mayúsculas o minúsculas)."""
+    bad = client.post("/api/protected-terms", json={"term": "Sol", "category": "cualquier-cosa-larguísima"})
+    assert bad.status_code == 422
+    assert bad.json()["errors"] == [{"loc": ["body", "category"], "type": "literal_error"}]
+    assert "larguísima" not in bad.text
+    for cat, stored in (("BRAND", "BRAND"), ("code", "CODE")):
+        ok = client.post("/api/protected-terms", json={"term": f"Sol {cat}", "category": cat})
+        assert ok.status_code == 200, ok.text
+        row = next(t for t in client.get("/api/protected-terms").json() if t["id"] == ok.json()["id"])
+        assert row["category"] == stored
+        client.delete(f"/api/protected-terms/{ok.json()['id']}")
+
+
+def test_download_format_and_preview_version_are_closed_lists(client, job_id):
+    """#11: formato y versión desconocidos → 422 sin eco del valor (antes: 400 y la traducción, respectivamente)."""
+    r = client.get(f"/api/jobs/{job_id}/download?format=docx")
+    assert r.status_code == 422
+    assert r.json()["errors"] == [{"loc": ["query", "format"], "type": "literal_error"}] and "docx" not in r.text
+    r = client.get(f"/api/jobs/{job_id}/pages/1/preview?version=otra")
+    assert r.status_code == 422
+    assert r.json()["errors"] == [{"loc": ["query", "version"], "type": "literal_error"}] and "otra" not in r.text
+    assert client.get(f"/api/jobs/{job_id}/pages/1/preview?version=translated").status_code == 200
+
+
+def test_upload_mode_and_ocr_lang_are_closed_lists(client, sample_pdf):
+    """#11: modo e idioma de OCR los valida FastAPI (422 sin eco) en vez de la función, y no se crea nada."""
+    before = len(client.get("/api/jobs").json())
+    for bad, field in (({"mode": "otro"}, "mode"), ({"mode": "digitize", "ocr_lang": "klingon"}, "ocr_lang")):
+        r = client.post("/api/jobs", files={"file": ("s.pdf", sample_pdf.read_bytes(), "application/pdf")},
+                        data={"rights_confirmed": "true", **bad})
+        assert r.status_code == 422, r.text
+        assert r.json()["errors"] == [{"loc": ["body", field], "type": "literal_error"}]
+        assert "otro" not in r.text and "klingon" not in r.text
+    assert len(client.get("/api/jobs").json()) == before

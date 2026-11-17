@@ -5,6 +5,7 @@ import hashlib
 import json
 import threading
 from pathlib import Path
+from typing import Literal
 
 import pymupdf
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -25,6 +26,9 @@ from app.pipeline.epub import build_epub_for_job, epub_path_for
 from app.storage import StoragePort, get_storage
 from app.storage.errors import StorageError
 from app.storage.keys import generate_key
+
+JobMode = Literal["translate", "digitize", "prepare"]
+OcrLang = Literal["en", "es", "auto"]
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -112,18 +116,14 @@ def job_status(job: Job, review: list[dict] | None = None) -> dict:
 
 
 def _create_job_from_bytes(db: Session, data: bytes, filename: str, rights_confirmed: bool, source_lang: str,
-                          target_lang: str, mode: str, ocr_lang: str, correct_ocr: bool, p: Principal) -> dict:
+                          target_lang: str, mode: JobMode, ocr_lang: OcrLang, correct_ocr: bool, p: Principal) -> dict:
     """Valida el PDF, lo guarda en `uploads_dir` y encola el job (común a la subida directa y a la de S3)."""
     st = get_settings()
     if not rights_confirmed:
         raise HTTPException(400, "Debes confirmar que tienes derechos de uso sobre el libro.")
-    if mode not in ("translate", "digitize", "prepare"):
-        raise HTTPException(400, "Modo no válido.")
     if mode == "prepare" and not p.is_admin:  # preparar es para el Playground (administración)
         raise HTTPException(403, "No tienes permiso para esta acción.")
     if mode == "digitize":
-        if ocr_lang not in ("en", "es", "auto"):
-            raise HTTPException(400, "Idioma de OCR no válido.")
         if not ocrmypdf_available():
             raise HTTPException(400, "Este equipo no tiene OCRmyPDF/Tesseract instalados; no se puede digitalizar.")
     elif (source_lang, target_lang) != ("en", "es"):
@@ -164,10 +164,10 @@ def _create_job_from_bytes(db: Session, data: bytes, filename: str, rights_confi
 def create_job(
     file: UploadFile = File(...),
     rights_confirmed: bool = Form(...),
-    source_lang: str = Form("en"),
-    target_lang: str = Form("es"),
-    mode: str = Form("translate"),
-    ocr_lang: str = Form("en"),
+    source_lang: str = Form("en", max_length=8),
+    target_lang: str = Form("es", max_length=8),
+    mode: JobMode = Form("translate"),
+    ocr_lang: OcrLang = Form("en"),
     correct_ocr: bool = Form(False),
     db: Session = Depends(get_db),
     p: Principal = Depends(require_user),
@@ -195,10 +195,10 @@ class FromUploadIn(BaseModel):
     key: str = Field(min_length=1, max_length=512)
     filename: str = Field(min_length=1, max_length=512)
     rights_confirmed: bool
-    source_lang: str = "en"
-    target_lang: str = "es"
-    mode: str = "translate"
-    ocr_lang: str = "en"
+    source_lang: str = Field(default="en", max_length=8)
+    target_lang: str = Field(default="es", max_length=8)
+    mode: JobMode = "translate"
+    ocr_lang: OcrLang = "en"
     correct_ocr: bool = False
 
 
@@ -333,7 +333,7 @@ def resume_job(job_id: int, db: Session = Depends(get_db), p: Principal = Depend
 
 
 @router.get("/{job_id}/download")
-def download(job_id: int, format: str = "pdf", db: Session = Depends(get_db),
+def download(job_id: int, format: Literal["pdf", "epub", "azw3"] = "pdf", db: Session = Depends(get_db),
              p: Principal = Depends(require_user)):
     job = _job_or_404(db, job_id, p)
     if job.status != "done" or not job.output_path or not Path(job.output_path).exists():
@@ -344,8 +344,6 @@ def download(job_id: int, format: str = "pdf", db: Session = Depends(get_db),
     if format == "azw3":
         path = _azw3_for(db, job)
         return FileResponse(path, media_type="application/vnd.amazon.ebook", filename=path.name)
-    if format != "pdf":
-        raise HTTPException(400, "Formato no disponible. Usa pdf, epub o azw3.")
     return FileResponse(job.output_path, media_type="application/pdf", filename=Path(job.output_path).name)
 
 
@@ -391,8 +389,8 @@ def report(job_id: int, db: Session = Depends(get_db), p: Principal = Depends(re
 
 
 @router.get("/{job_id}/pages/{number}/preview")
-def preview(job_id: int, number: int, version: str = "translated", dpi: int = 80, db: Session = Depends(get_db),
-            p: Principal = Depends(require_user)):
+def preview(job_id: int, number: int, version: Literal["original", "translated"] = "translated", dpi: int = 80,
+            db: Session = Depends(get_db), p: Principal = Depends(require_user)):
     job = _job_or_404(db, job_id, p)
     path = job.document.path if version == "original" else job.output_path
     if not path or not Path(path).exists():

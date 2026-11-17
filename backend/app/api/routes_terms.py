@@ -1,5 +1,7 @@
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -10,10 +12,21 @@ from app.db.session import get_db
 router = APIRouter(prefix="/api", tags=["terms"])
 
 
+# Las que ofrece la vista de términos (frontend/app/admin/jobs/[id]/terms.tsx, CATEGORY). Solo letras: la categoría
+# forma el marcador __CATEGORIA_000__ del Protector (PLACEHOLDER_RE solo reconoce [A-Z]+).
+TermCategory = Literal["NAME", "BRAND", "CODE", "TERM"]
+
+
 class TermIn(BaseModel):
     term: str = Field(min_length=2, max_length=512)
-    category: str = "NAME"
+    category: TermCategory = "NAME"
     document_id: int | None = None
+
+    @field_validator("category", mode="before")
+    @classmethod
+    def _upper(cls, v: object) -> object:
+        """Se sigue aceptando en minúsculas ("term" → "TERM"), como antes de validar la lista."""
+        return v.strip().upper() if isinstance(v, str) else v
 
 
 class GlossaryIn(BaseModel):
@@ -60,7 +73,7 @@ def list_terms(document_id: int | None = None, db: Session = Depends(get_db)):
 @router.post("/protected-terms")
 def add_term(body: TermIn, db: Session = Depends(get_db)):
     _check_document(db, body.document_id)
-    t = ProtectedTerm(term=body.term.strip(), category=body.category.upper(), origin="manual",
+    t = ProtectedTerm(term=body.term.strip(), category=body.category, origin="manual",
                       document_id=body.document_id)
     db.add(t)
     _commit_new(db)

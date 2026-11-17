@@ -320,7 +320,7 @@ def test_api(db, book, monkeypatch):
     assert set(c.get("/api/admin/prompts").json()) == {"translate", "correct", "shorten", "names", "glossary"}
     d = c.post("/api/admin/prompt-drafts", json={"task": "translate", "name": "Más literal", "text": "P1"}).json()
     assert c.put(f"/api/admin/prompt-drafts/{d['id']}", json={"text": "P2"}).json()["text"] == "P2"
-    assert c.post("/api/admin/prompt-drafts", json={"task": "x", "name": "n", "text": "t"}).status_code == 400
+    assert c.post("/api/admin/prompt-drafts", json={"task": "x", "name": "n", "text": "t"}).status_code == 422
     assert any(b["id"] == book and b["task"] == "translate" for b in c.get("/api/admin/playground/books").json())
 
     body = {"job_id": book, "pages": "1-2", "variants": [{"provider": "fake"}, {"provider": "fake", "prompt": d["id"]}]}
@@ -357,6 +357,25 @@ def test_api(db, book, monkeypatch):
     assert free["needs_confirm"] is False
     assert c.post("/api/admin/playground/runs", json={**body, "variants": []}).status_code == 400
     assert c.delete(f"/api/admin/prompt-drafts/{d['id']}").status_code == 200
+
+
+def test_playground_inputs_are_validated(db, book):
+    """#11: alcance y tarea son listas cerradas y los textos tienen tope; el 422 no repite el valor recibido."""
+    from app.main import app
+
+    from .conftest import admin_client
+
+    c = admin_client(app)
+    body = {"job_id": book, "scope": "pages", "pages": "1", "variants": [{"provider": "fake"}]}
+    assert c.post("/api/admin/playground/estimate", json=body).status_code == 200
+    long_pages = "1," * 1001  # 2002 caracteres
+    for bad, loc in (({"pages": long_pages}, ["body", "pages"]), ({"scope": "todo"}, ["body", "scope"]),
+                     ({"variants": [{"provider": "fake", "model": "m" * 65}]}, ["body", "variants", 0, "model"])):
+        r = c.post("/api/admin/playground/estimate", json={**body, **bad})
+        assert r.status_code == 422, (bad, r.text)
+        assert [e["loc"] for e in r.json()["errors"]] == [loc]
+        assert all(set(e) == {"loc", "type"} for e in r.json()["errors"])
+        assert "1,1,1" not in r.text and "todo" not in r.text and "mmm" not in r.text
 
 
 def test_delete_book_removes_analysis_in_cascade(db, book, tmp_path, monkeypatch):
