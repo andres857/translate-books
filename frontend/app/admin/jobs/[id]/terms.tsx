@@ -18,19 +18,14 @@ export function Terms({ documentId }: { documentId: number }) {
   const [disc, setDisc] = useState<GlossaryDiscovery | null>(null);
   const [editing, setEditing] = useState<{ id: number; target: string } | null>(null);
 
-  const load = useCallback(async () => {
-    try {
-      const [gl, tr] = await Promise.all([listGlossary(documentId), listTerms(documentId)]);
-      setGlossary(gl);
-      setTerms(tr);
-      setError(null);
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }, [documentId]);
+  // el estado se actualiza en los callbacks de la promesa (nunca de forma síncrona dentro de un efecto)
+  const load = useCallback(() => Promise.all([listGlossary(documentId), listTerms(documentId)]).then(
+    ([gl, tr]) => { setGlossary(gl); setTerms(tr); setError(null); },
+    (e) => setError((e as Error).message),
+  ), [documentId]);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
   // estado del descubrimiento (va en segundo plano): se consulta mientras esté en marcha

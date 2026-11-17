@@ -6,7 +6,7 @@
    3 · la revisión de páginas, en una galería de miniaturas con filtros a la derecha.
    Una barra fija abajo resume lo que se va a procesar, deja elegir el método de la primera evaluación y la lanza.
    Funciona también con libros escaneados sin capítulos: se define un intervalo «10–20». */
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import {
   DEEPSEEK_MODELS, jobPageImageUrl, listPlaygroundPages, type Chapter, type Estimate, type PlaygroundBook, type PlaygroundPageInfo,
   type PlaygroundScope,
@@ -29,6 +29,7 @@ const SIZES: { id: Size; title: string; label: string; dpi: number }[] = [
   { id: "l", title: "L", label: "Miniaturas grandes", dpi: 84 },
 ];
 const SIZE_KEY = "pg-thumb-size";
+const subscribeNothing = () => () => {};
 function storedSize(): Size {
   try {
     const v = localStorage.getItem(SIZE_KEY);
@@ -81,14 +82,16 @@ export function ScopeView(p: Props) {
   const [pages, setPages] = useState<PlaygroundPageInfo[]>([]);
   const [anchor, setAnchor] = useState<number | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
-  const [size, setSize] = useState<Size>("m");
+  // tamaño de miniaturas: el guardado se lee en el navegador sin desajustar la hidratación
+  const storedThumbSize = useSyncExternalStore(subscribeNothing, storedSize, () => "m" as Size);
+  const [chosenSize, setSize] = useState<Size | null>(null);
+  const size: Size = chosenSize ?? storedThumbSize;
   const [preview, setPreview] = useState<number | null>(null); // página abierta en el visor junto a la galería
   // lo último elegido en cada modo, para mostrar su recuento y recuperarlo al volver a él
   const [rangeSpec, setRangeSpec] = useState(() => (modeOf(p.value) === "range" ? p.value.pagesSpec : ""));
   const [looseSpec, setLooseSpec] = useState(() => (p.value.scope === "page" ? p.value.onePage
     : modeOf(p.value) === "loose" ? p.value.pagesSpec : ""));
 
-  useEffect(() => { setSize(storedSize()); }, []);
   function pickSize(v: Size) {
     setSize(v);
     try { localStorage.setItem(SIZE_KEY, v); } catch { /* sin almacenamiento: solo para esta visita */ }
@@ -97,25 +100,35 @@ export function ScopeView(p: Props) {
   const book = p.books.find((b) => b.id === p.bookId) ?? null;
   const count = book?.page_count ?? pages.length;
 
-  // el alcance cambia desde fuera (capítulos detectados al elegir libro): el modo lo sigue
-  useEffect(() => {
+  // Ajustes en el render (no en efectos), en el mismo orden que tenían los efectos:
+  // 1) el alcance cambia desde fuera (capítulos detectados al elegir libro): el modo lo sigue
+  const [scopeSeen, setScopeSeen] = useState(p.value.scope);
+  if (scopeSeen !== p.value.scope) {
+    setScopeSeen(p.value.scope);
     const scopeOf = (m: Mode): PlaygroundScope[] => (m === "range" ? ["pages"] : m === "loose" ? ["pages", "page"] : [m]);
     setMode((m) => (scopeOf(m).includes(p.value.scope) ? m : modeOf(p.value)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reacciona solo al alcance que llega de fuera, no a cada cambio de p.value
-  }, [p.value.scope]);
-  useEffect(() => {
-    if (p.value.scope !== "pages") return;
-    if (mode === "range") setRangeSpec(p.value.pagesSpec);
-    if (mode === "loose") setLooseSpec(p.value.pagesSpec);
-  }, [p.value.pagesSpec, p.value.scope, mode]);
-
-  useEffect(() => {
+  }
+  // 2) el intervalo elegido fuera se copia al modo que corresponde
+  const specKey = `${p.value.pagesSpec}|${p.value.scope}|${mode}`;
+  const [specSeen, setSpecSeen] = useState<string | null>(null);
+  if (specSeen !== specKey) {
+    setSpecSeen(specKey);
+    if (p.value.scope === "pages" && mode === "range") setRangeSpec(p.value.pagesSpec);
+    if (p.value.scope === "pages" && mode === "loose") setLooseSpec(p.value.pagesSpec);
+  }
+  // 3) otro libro (y al montar): galería, filtros e intervalos recordados vuelven a empezar
+  const [bookSeen, setBookSeen] = useState<number | null | undefined>(undefined);
+  if (bookSeen !== p.bookId) {
+    setBookSeen(p.bookId);
     setPages([]);
     setAnchor(null);
     setPreview(null);
     setFilter("all");
     setRangeSpec("");
     setLooseSpec("");
+  }
+
+  useEffect(() => {
     if (p.bookId === null) return;
     let alive = true;
     listPlaygroundPages(p.bookId).then((x) => { if (alive) setPages(x); }).catch(() => undefined);
@@ -490,7 +503,12 @@ function BookPicker(p: {
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
   }, [open]);
-  useEffect(() => { if (!open) { setQ(""); setConfirmDel(null); setDelError(null); } }, [open]);
+  // al cerrar el selector se limpian búsqueda y confirmación (ajuste en el render, no en un efecto)
+  const [openSeen, setOpenSeen] = useState(open);
+  if (openSeen !== open) {
+    setOpenSeen(open);
+    if (!open) { setQ(""); setConfirmDel(null); setDelError(null); }
+  }
 
   const needle = q.trim().toLocaleLowerCase("es");
   const visible = needle ? p.books.filter((b) => `${b.name} ${b.original_name}`.toLocaleLowerCase("es").includes(needle)) : p.books;

@@ -54,17 +54,14 @@ export default function AdminJobPage({ params }: { params: Promise<{ id: string 
     };
   }, [downloads]);
 
-  const reload = useCallback(async () => {
-    try {
-      setData(await getSummary(id));
-      setError(null);
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }, [id]);
+  // el estado se actualiza en los callbacks de la promesa (nunca de forma síncrona dentro de un efecto)
+  const reload = useCallback(() => getSummary(id).then(
+    (d) => { setData(d); setError(null); },
+    (e) => setError((e as Error).message),
+  ), [id]);
 
   useEffect(() => {
-    reload();
+    void reload();
   }, [reload]);
 
   // mientras el libro se procesa, el resumen se refresca solo

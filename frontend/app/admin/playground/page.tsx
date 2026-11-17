@@ -1,8 +1,7 @@
 "use client";
 
-/* Playground: mesa para evaluar el rendimiento de la traducción. Compara página a página el PDF original con el
-   PDF que produce cada variante (método, modelo, razonamiento y prompt), más la traducción de producción.
-   Controles fijos arriba; columnas con scroll lateral; panel derecho según la columna seleccionada. */
+/* Playground: compara página a página el PDF original, el de cada variante (método, modelo, razonamiento y
+   prompt) y la traducción de producción. Controles fijos arriba, columnas con scroll lateral y panel derecho. */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createRun, deletePlaygroundBook, getPrompts, getRun, getRunPage, getSegments, listChapters, listDrafts, listPlaygroundBooks,
@@ -36,8 +35,8 @@ export default function PlaygroundPage() {
   const [runs, setRuns] = useState<PlaygroundRun[]>([]);
   const [run, setRun] = useState<PlaygroundRun | null>(null);
   const [pageIdx, setPageIdx] = useState(0);
-  const [page, setPage] = useState<RunPage | null>(null);
-  const [pageLoading, setPageLoading] = useState(false);
+  // última página cargada y para qué clave (ver pageKey): página y «cargando» se derivan de ella
+  const [loadedPage, setLoadedPage] = useState<{ key: string; page: RunPage | null } | null>(null);
   const [view, setView] = useState<"page" | "blocks">("page");
   const [hiWarn, setHiWarn] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
@@ -124,10 +123,14 @@ export default function PlaygroundPage() {
     refreshRuns();
   }, [refreshRuns, show]);
 
-  useEffect(() => {
-    if (bookId === null) return;
+  const [chaptersFor, setChaptersFor] = useState<number | null>(null); // al cambiar de libro: capítulos vacíos
+  if (bookId !== null && chaptersFor !== bookId) {
+    setChaptersFor(bookId);
     setChapters([]);
     setChapter("");
+  }
+  useEffect(() => {
+    if (bookId === null) return;
     const count = books.find((b) => b.id === bookId)?.page_count ?? 1;
     const choosing = scopeOpen && !run; // eligiendo en la vista inicial: alcance por defecto según haya capítulos
     let alive = true; // si se cambia de libro antes de que respondan, los capítulos del anterior se descartan
@@ -150,12 +153,13 @@ export default function PlaygroundPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al cambiar de libro; books, scopeOpen y run se leen como estén entonces
   }, [bookId]);
 
-
-  // los borradores son de una tarea: si el borrador ya no existe, la variante vuelve a producción
-  useEffect(() => {
+  // si el borrador de una variante ya no existe para la tarea, vuelve a producción (ajuste en el render)
+  const [draftsSynced, setDraftsSynced] = useState<{ task: PlaygroundTask; drafts: PromptDraft[] } | null>(null);
+  if (!draftsSynced || draftsSynced.task !== task || draftsSynced.drafts !== drafts) {
+    setDraftsSynced({ task, drafts });
     setVariants((vs) => vs.map((v) => (typeof v.prompt === "number" && !drafts.some((d) => d.id === v.prompt && d.task === task)
       ? { ...v, prompt: "production" } : v)));
-  }, [task, drafts]);
+  }
 
   // seguimiento de la evaluación abierta
   useRunTracking(run, setRun, refreshRuns);
@@ -182,18 +186,17 @@ export default function PlaygroundPage() {
   const pageKey = run
     ? [run.id, pageNo, run.status, ...(run.results ?? []).map((r) => `${r.label}${r.composed_at ?? ""}${(r.stale_pages ?? []).join(".")}`)].join("|")
     : `${bookId}|${pageNo}|${prodAvailable}`;
+  const needsPage = pageNo !== null && (!!run || !!bookId);
+  // mientras carga la siguiente se ve la última cargada (como antes)
+  const page = needsPage ? loadedPage?.page ?? null : null;
+  const pageLoading = needsPage && loadedPage?.key !== pageKey;
   useEffect(() => {
-    if (pageNo === null || (!run && !bookId)) {
-      setPage(null);
-      return;
-    }
+    if (pageNo === null || (!run && !bookId)) return;
     let alive = true;
-    setPageLoading(true);
     const load = run ? getRunPage(run.id, pageNo) : getSegments(bookId!, pageNo).then((d) => pageFromSegments(d, prodAvailable));
     load
-      .then((p) => { if (alive) setPage(p); })
-      .catch(() => { if (alive) setPage(null); })
-      .finally(() => { if (alive) setPageLoading(false); });
+      .then((p) => { if (alive) setLoadedPage({ key: pageKey, page: p }); })
+      .catch(() => { if (alive) setLoadedPage({ key: pageKey, page: null }); });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- pageKey resume run, pageNo, bookId y prodAvailable
   }, [pageKey]);
@@ -306,7 +309,7 @@ export default function PlaygroundPage() {
     try {
       const { votes } = await voteRunPage(run.id, pageNo, next);
       setRun({ ...run, votes });
-      setPage((p) => (p ? { ...p, vote: next } : p));
+      setLoadedPage((l) => (l && l.page ? { ...l, page: { ...l.page, vote: next } } : l));
       getRun(run.id).then((r) => setRun((cur) => (cur?.id === r.id ? r : cur))).catch(() => undefined); // resumen
     } catch (e) {
       fail(e);
@@ -319,7 +322,6 @@ export default function PlaygroundPage() {
     setNotice(null);
     act(() => tryVariantPage(run.id, target.label, pageNo, toInput(target)));
   }
-
 
   // ------------------------------------------------------------------ columnas
   const { columns, panelColumns, voteOptions, warnPages, nextWarn, tryState, selModified } = buildColumns({

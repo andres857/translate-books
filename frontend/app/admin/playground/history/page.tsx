@@ -35,10 +35,19 @@ function kindLabel(a: Attempt): string {
 export default function PlaygroundHistoryPage() {
   const [books, setBooks] = useState<HistoryBook[] | null>(null);
   const [bookId, setBookId] = useState<number | null>(null);
-  const [attempts, setAttempts] = useState<Attempt[] | null>(null);
+  // cada carga recuerda para qué libro/intento es: si no coincide con lo elegido, aún no ha llegado (null)
+  const [loadedAttempts, setLoadedAttempts] = useState<{ bookId: number; list: Attempt[] } | null>(null);
   const [selId, setSelId] = useState<number | null>(null);
-  const [detail, setDetail] = useState<AttemptDetail | null>(null);
+  const [loadedDetail, setLoadedDetail] = useState<{ id: number; data: AttemptDetail } | null>(null);
   const [pageIdx, setPageIdx] = useState(0);
+  const attempts = loadedAttempts && loadedAttempts.bookId === bookId ? loadedAttempts.list : null;
+  const detail = loadedDetail && loadedDetail.id === selId ? loadedDetail.data : null;
+  // al cambiar de intento se vuelve a su primera página (ajuste en el render, no en un efecto)
+  const [pagedFor, setPagedFor] = useState<number | null>(null);
+  if (pagedFor !== selId) {
+    setPagedFor(selId);
+    setPageIdx(0);
+  }
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -56,16 +65,13 @@ export default function PlaygroundHistoryPage() {
 
   useEffect(() => {
     if (bookId === null) return;
-    setAttempts(null);
-    getHistory(bookId).then((h) => setAttempts(h.attempts)).catch((e) => setError((e as Error).message));
+    getHistory(bookId).then((h) => setLoadedAttempts({ bookId, list: h.attempts })).catch((e) => setError((e as Error).message));
   }, [bookId]);
 
   useEffect(() => {
     setQuery(bookId, selId);
-    if (selId === null) { setDetail(null); return; }
-    setDetail(null);
-    setPageIdx(0);
-    getAttempt(selId).then(setDetail).catch((e) => setError((e as Error).message));
+    if (selId === null) return;
+    getAttempt(selId).then((d) => setLoadedDetail({ id: selId, data: d })).catch((e) => setError((e as Error).message));
   }, [bookId, selId]);
 
   const chooseBook = useCallback((id: number) => {

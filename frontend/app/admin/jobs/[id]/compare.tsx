@@ -2,7 +2,7 @@
 
 /* Pestaña Libro: índice por capítulos (izquierda) y visor de páginas con original y traducción (derecha).
    Debajo del visor, el texto por bloque para corregir la traducción y recomponer la página. */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   getJob, getSegments, listBookChapters, recomposePage, saveSegment, type BookChapter,
   type JobSummary, type PageSegments, type PageSummary, type SegmentRow,
@@ -69,6 +69,15 @@ type PageState = "ok" | "empty" | "pending";
 const STATE_LABEL: Record<PageState, string> = { ok: "Traducida", empty: "Sin texto", pending: "Pendiente" };
 
 const SHOW_KEY = "compare-sheets";
+const subscribeNothing = () => () => {};
+function readShow(): Show | null {
+  try {
+    const v = localStorage.getItem(SHOW_KEY);
+    return v === "both" || v === "original" || v === "translated" ? v : null;
+  } catch {
+    return null; // sin almacenamiento: vista por defecto
+  }
+}
 const UNSAVED_NOTICE = "Tienes correcciones sin guardar en esta página: guárdalas antes de cambiar de página. "
   + "Para descartarlas, elige otra página en el índice o con las flechas de la barra.";
 const UNSAVED_CONFIRM = "Tienes correcciones sin guardar en esta página. ¿Cambiar de página y descartarlas?";
@@ -83,7 +92,10 @@ export function Compare({ data, page, onPage, onChanged }: {
   const [info, setInfo] = useState<PageSegments | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [zoom, setZoom] = useState(2);
-  const [show, setShow] = useState<Show>("both");
+  // elección Original/Comparar/Traducción: la guardada se lee en el navegador sin desajustar la hidratación
+  const storedShow = useSyncExternalStore(subscribeNothing, readShow, () => null);
+  const [chosenShow, setShow] = useState<Show | null>(null);
+  const show: Show = chosenShow ?? storedShow ?? "both";
   const [hover, setHover] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
@@ -94,13 +106,6 @@ export function Compare({ data, page, onPage, onChanged }: {
   const [chapters, setChapters] = useState<BookChapter[] | null>(null);
   const [open, setOpen] = useState<Record<number, boolean>>({});
   const [pageText, setPageText] = useState(String(page));
-
-  useEffect(() => {
-    try {
-      const v = localStorage.getItem(SHOW_KEY);
-      if (v === "both" || v === "original" || v === "translated") setShow(v);
-    } catch { /* vista por defecto */ }
-  }, []);
 
   function chooseShow(v: Show) {
     setShow(v);
@@ -120,12 +125,23 @@ export function Compare({ data, page, onPage, onChanged }: {
   const stateOf = (p: PageSummary): PageState =>
     p.segments === 0 ? "empty" : job.mode === "translate" && p.translated === 0 ? "pending" : "ok";
 
+  // al cambiar de página (o de capítulo) el estado ligado a la anterior se ajusta en el propio render, no en
+  // un efecto: así no hay un render intermedio con los bloques, borradores o campo de la página vieja
+  const [shownPage, setShownPage] = useState(page);
+  if (shownPage !== page) {
+    setShownPage(page);
+    setPageText(String(page));
+    setDrafts({});
+    setNotice(null);
+    setUnsaved(false);
+    setInfo((cur) => (cur && cur.number === page ? cur : null)); // no mostrar (ni editar) bloques de otra página
+  }
   // el capítulo de la página actual se despliega solo
-  useEffect(() => {
-    if (current >= 0) setOpen((o) => (o[current] ? o : { ...o, [current]: true }));
-  }, [current]);
-
-  useEffect(() => setPageText(String(page)), [page]);
+  const [openedFor, setOpenedFor] = useState(-1);
+  if (current >= 0 && openedFor !== current) {
+    setOpenedFor(current);
+    if (!open[current]) setOpen((o) => ({ ...o, [current]: true }));
+  }
 
   // correcciones escritas y sin guardar: cambiar de página las descartaría (ver go() y los efectos de
   // teclado y rueda). La ref deja que esos efectos lo consulten sin volver a registrarse.
@@ -157,27 +173,25 @@ export function Compare({ data, page, onPage, onChanged }: {
 
   // cada carga lleva un número: si mientras tanto se pidió otra (otra página), su respuesta se ignora
   const loadSeq = useRef(0);
-  const load = useCallback(async () => {
+  const load = useCallback(() => {
     const seq = ++loadSeq.current;
-    try {
-      const segments = await getSegments(job.id, page);
-      if (seq !== loadSeq.current) return;
-      setInfo(segments);
-      setError(null);
-    } catch (e) {
-      if (seq !== loadSeq.current) return;
-      setInfo(null);
-      setError((e as Error).message);
-    }
+    return getSegments(job.id, page).then(
+      (segments) => {
+        if (seq !== loadSeq.current) return;
+        setInfo(segments);
+        setError(null);
+      },
+      (e) => {
+        if (seq !== loadSeq.current) return;
+        setInfo(null);
+        setError((e as Error).message);
+      },
+    );
   }, [job.id, page]);
 
   useEffect(() => {
-    setDrafts({});
-    setNotice(null);
-    setUnsaved(false);
-    setInfo((cur) => (cur && cur.number === page ? cur : null)); // no mostrar (ni editar) bloques de otra página
-    load();
-  }, [load, page]);
+    void load();
+  }, [load]);
 
   // ← y → cambian de página, salvo al escribir en un campo
   useEffect(() => {

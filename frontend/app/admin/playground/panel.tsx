@@ -2,7 +2,7 @@
 
 /* Panel derecho: depende de la columna seleccionada. Con una variante, su configuración (método, modelo,
    razonamiento y prompt) y «Probar en la pág. N»; con el original o producción, el resumen de la evaluación. */
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   createDraft, DEEPSEEK_MODELS, fmtUsd, updateDraft, type PlaygroundRun, type PlaygroundTask, type PromptDraft, type Provider, type RunPage,
   type VariantInput, type VariantResult,
@@ -75,11 +75,20 @@ export function Panel(p: Props) {
   const modelValue = variant?.model && variant.model in DEEPSEEK_MODELS ? variant.model : "deepseek-flash";
   const draft = variant && typeof variant.prompt === "number" ? taskDrafts.find((d) => d.id === variant.prompt) ?? null : null;
 
-  useEffect(() => { setEditing(false); }, [col]);
-  useEffect(() => {
+  // ajustes en el render (no en efectos): otra columna cierra el editor; otro borrador (o cambios en el de
+  // producción) recarga el nombre y el texto que se editan
+  const [editingFor, setEditingFor] = useState(col);
+  if (editingFor !== col) {
+    setEditingFor(col);
+    setEditing(false);
+  }
+  const source = `${draft?.id}|${draft?.name}|${draft?.text}|${p.productionPrompt}`;
+  const [loadedSource, setLoadedSource] = useState<string | null>(null);
+  if (loadedSource !== source) {
+    setLoadedSource(source);
     setDraftName(draft?.name ?? "");
     setDraftText(draft?.text ?? p.productionPrompt);
-  }, [draft?.id, draft?.name, draft?.text, p.productionPrompt]);
+  }
 
   const block = sel && page ? page.blocks.find((b) => b.key === sel) ?? null : null;
   const dataCols = columns.filter((c) => page?.metrics[c.id]);
