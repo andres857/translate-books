@@ -102,3 +102,87 @@ y `translation_cache` no tienen relaciones. Diferencias modelo/esquema: el CHECK
 - `admin`: resumen, bloques, corregir y recomponer una página, glosario y términos, borrar un libro,
   Configuración, Usuarios y Playground (estimar y ejecutar con prueba sin API).
 - Worker: procesar, recomponer, preparar para el Playground y recuperar trabajos huérfanos tras reiniciar.
+
+## Estado final (17 de noviembre de 2026)
+
+Las 20 fichas están resueltas (columna Estado de la tabla de problemas: «resuelto» en las 20 filas).
+
+### Queries por endpoint
+
+Mismo método que la línea base (`baseline.py` con `admin_client`, contador sobre `before_cursor_execute`, copia de
+`data/app.db` con la API de backup de sqlite3 en `mode=ro`; 1 libro, 192 páginas, 3345 bloques; copia en la cabeza
+`f3b5d7e9a1c4`). En esta medición la sesión cuenta **2 queries** en los 7 endpoints (sesión y usuario, sin escritura
+de `last_seen`), igual que en las mediciones de #04 y #05 en este equipo; el `3` del glosario en la línea base solo
+cuadra con 2 de sesión, así que la comparación es entre cifras con la misma sesión.
+
+| Endpoint | Antes | Después | Ficha |
+|---|---|---|---|
+| `GET /api/jobs` (1 trabajo) | 5 (+2 por trabajo) | **4** (no crece con los trabajos) | #04 |
+| `GET /api/jobs/1` | 5 (trae las 192 páginas) | **5** (solo las páginas a revisar: 1 fila) | #04 |
+| `GET /api/admin/jobs/1/summary` | **198** | **6** | #05 |
+| `GET /api/admin/jobs/1/pages/10/segments` | 5 | 5 | — |
+| `GET /api/jobs/1/pages` | 4 | 4 | — |
+| `GET /api/admin/playground/books` | 5 | 5 | — |
+| `GET /api/glossary?document_id=1` | 3 | 3 | — |
+
+### Fichas y commits
+
+| # | Commits |
+|---|---|
+| 01 | `6a5443c`, `83b7c35` |
+| 02 | `f39a302`, `112bfb6`, `ab64a9d` |
+| 03 | `30a919f`, `b49e1d1` |
+| 04 | `03b5cbb`, `c1e2091` |
+| 05 | `2ccecb7`, `07f1633` |
+| 06 | `c0b3ea9`, `af87478` |
+| 07 | `69ae2c7`, `ccd6fa9` |
+| 08 | `1592a3c`, `d2d0f55` |
+| 09 | `0b140d9`, `8222ad3` |
+| 10 | `a27ede6`, `a3d1434` |
+| 11 | `c35ac2d`, `c9fd561` |
+| 12 | `5f7c410`, `9926271` |
+| 13 | `12b75fa`, `26f2832`, `b419ce4` |
+| 14 | `5ae85be`, `d53924e` |
+| 15 | `a9c31ed`, `6a70c3c`, `d5f3bce` |
+| 16 | `b90c42b`, `60ed868` |
+| 17 | `36a622f`, `e30d768` |
+| 18 | `408fdbf`, `ed897db` |
+| 19 | `26b9542`, `8f0a64c`, `bd98fad` |
+| 20 | `31a186b`, `f4e9fcb` |
+
+### Migraciones nuevas (en orden)
+
+De 10 a 12 migraciones, lineales; cabeza `f3b5d7e9a1c4` (`alembic heads`), la misma que la copia de `data/app.db`.
+
+1. `e1f3a5c7b9d2` (#10, sobre `d2e4f6a8c0b1`): índices únicos `uq_segments_page_seg_key (page_id, seg_key)`,
+   `uq_glossary_doc_source (coalesce(document_id, 0), lower(source))` y
+   `uq_protected_terms_doc_term (coalesce(document_id, 0), term)`. Sin reconstruir tablas. Reversible: el downgrade
+   borra los tres índices.
+2. `f3b5d7e9a1c4` (#09, sobre `e1f3a5c7b9d2`): FK con `ON DELETE` explícito (CASCADE en páginas, bloques e intentos;
+   RESTRICT en documentos, usuarios y trabajos del Playground) reconstruyendo las tablas con `batch_alter_table`, e
+   índices de `document_id`. Reversible: upgrade → downgrade -1 → upgrade verificado sobre una copia con las mismas
+   filas y contenido por tabla y `foreign_key_check` vacío.
+
+### Comprobaciones
+
+- `cd backend && .venv/bin/python -m pytest -q -m "not slow and not s3"`: **190 passed, 1 skipped, 5 deselected**
+  (46 s; línea base 138 passed).
+- `.venv/bin/ruff check app tests`: All checks passed!
+- `test_alembic_check` (`tests/test_tooling.py`): 1 passed.
+- App desplegada, sin cuentas: `GET :8000/api/health` → 200 `{"ok":true}`; `GET :3100/login` → 200; a través de
+  :3100, `/api/jobs`, `/api/settings`, `/api/users` y `/api/admin/jobs/1/summary` → 401 `UNAUTHENTICATED`.
+- `frontend/` (lo tocó #08): `npx tsc --noEmit` sin errores, `npm run lint` sin avisos, `npm run test` 20 passed
+  (3 archivos), `npm run build` correcto y `node ../handoff/check.mjs app lib` 59 archivos, 0 problemas.
+
+### Pendiente de verificación manual
+
+Necesita cuentas en la app (las QA no estaban autorizadas); los tests automáticos de cada caso están en verde.
+
+- `user`: subir, ver el progreso (polling), cancelar, reanudar y descargar PDF/EPUB (#02, #04, #06, #07, #18).
+- `user`: el rótulo del método de traducción («API · deepseek-…») en la barra lateral y el inicio (#08).
+- `admin`: corregir un bloque y recomponer su página (#01, #03); vista previa de páginas (#12).
+- `admin`: pantalla Resumen con los mismos totales (#05) y Configuración completa (#08).
+- `admin`: borrar un libro QA desde Inicio y desde el Playground, sin filas suyas en la BD (#09, #13, #20).
+- `admin`: Glosario y términos (añadir, editar, borrar y aviso «Ese término ya existe.») (#10, #11); Playground
+  (estimar y ejecutar con prueba sin API) y descargas (#11).
+- `admin`: alta, cambio de rol y desactivación de usuarios (#17); login, sesión activa y bitácora (#16).
