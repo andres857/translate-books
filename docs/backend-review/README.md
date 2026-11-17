@@ -58,7 +58,7 @@ y `translation_cache` no tienen relaciones. Diferencias modelo/esquema: el CHECK
 | 01 | Alto | [Una corrección manual se pierde si se guarda mientras el libro se procesa](01-edicion-perdida-durante-proceso.md) | [criterios](01-edicion-perdida-durante-proceso.aceptacion.md) | resuelto |
 | 02 | Alto | [El worker puede sobrescribir una cancelación con «done», «paused» o «failed»](02-worker-pisa-cancelacion.md) | [criterios](02-worker-pisa-cancelacion.aceptacion.md) | resuelto |
 | 03 | Medio | [Pedir otra recomposición mientras se recompone pierde la petición](03-recomposicion-pierde-paginas.md) | [criterios](03-recomposicion-pierde-paginas.aceptacion.md) | resuelto |
-| 04 | Alto | [El estado de un trabajo carga todas sus páginas y el listado hace N+1](04-job-status-carga-paginas.md) | [criterios](04-job-status-carga-paginas.aceptacion.md) | abierto |
+| 04 | Alto | [El estado de un trabajo carga todas sus páginas y el listado hace N+1](04-job-status-carga-paginas.md) | [criterios](04-job-status-carga-paginas.aceptacion.md) | resuelto |
 | 05 | Alto | [El resumen del admin hace una consulta por página](05-summary-n-mas-1.md) | [criterios](05-summary-n-mas-1.aceptacion.md) | abierto |
 | 06 | Alto | [Las subidas directas bloquean el event loop](06-async-bloqueante-subidas.md) | [criterios](06-async-bloqueante-subidas.aceptacion.md) | abierto |
 | 07 | Bajo | [El flujo SSE de progreso hace consultas síncronas en el loop y no se usa](07-sse-sin-uso.md) | [criterios](07-sse-sin-uso.aceptacion.md) | abierto |

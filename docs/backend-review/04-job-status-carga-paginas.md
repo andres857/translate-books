@@ -2,7 +2,7 @@
 
 - **Severidad:** Alto
 - **Categoría:** Rendimiento
-- **Estado:** abierto
+- **Estado:** resuelto · commit(s) `03b5cbb`
 - **Ubicación:** `backend/app/api/routes_jobs.py:158-195` (`job_status`, línea 176) y `:328-333` (`list_jobs`)
 - **Aceptación:** [04-job-status-carga-paginas.aceptacion.md](04-job-status-carga-paginas.aceptacion.md)
 
@@ -32,3 +32,8 @@ Obtener las páginas a revisar con una consulta que filtre `Page.needs_review` y
 ## Notas
 
 Usar el helper `count_queries` que añade el #15 (si aún no existe, crearlo en `tests/conftest.py` en este commit).
+
+Decisión al resolver: la consulta de páginas a revisar se ordena por `Page.id`, el orden en que la relación
+`Job.pages` (sin `order_by`) las devolvía, para que `review_pages` no cambie. Si el trabajo no está ligado a una
+sesión, `job_status` vuelve a recorrer `job.pages` (no pasa en las rutas actuales). El SSE `/events` usa el mismo
+`job_status`, así que también deja de leer todas las páginas en cada vuelta.
