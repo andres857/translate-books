@@ -4,6 +4,7 @@ import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { ApiError, getHealth, getJob, jobAction, type JobStatus, type StageState } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { DownloadLink } from "../../components/download-link";
 import { IconArrowLeft, IconCheck, IconDownload, IconHourglass, IconRefresh, IconWarn, IconX } from "../../components/art";
 
 const STATE_TEXT: Record<StageState, string> = {
@@ -119,6 +120,15 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
   }
 
   const done = job.status === "done";
+  // descargas: deshabilitadas mientras se recompone; si al pulsar ya no está listo, se avisa y se sigue el estado
+  const dl = {
+    jobId: job.id,
+    disabled: job.recomposing,
+    onProblem: (message: string | null, fresh?: JobStatus) => {
+      setError(message);
+      if (fresh) setJob(fresh);
+    },
+  };
   const active = job.status === "queued" || job.status === "running";
   const stopped = job.status === "cancelled" || job.status === "failed" || job.status === "paused";
   const message =
@@ -183,11 +193,17 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
                 <div><dt>Páginas para revisar</dt><dd>{job.review_pages.length}</dd></div>
               </dl>
               <div className="row">
-                <a className="btn" href={`/api/jobs/${job.id}/download`}><IconDownload /> Descargar PDF</a>
-                <a className="btn secondary" href={`/api/jobs/${job.id}/download?format=epub`}><IconDownload /> Kindle (EPUB)</a>
-                <a className="btn secondary" href={azw3 ? `/api/jobs/${job.id}/download?format=azw3` : undefined}
-                  aria-disabled={!azw3}><IconDownload /> Kindle (AZW3)</a>
-                <a className="btn ghost" href={`/api/jobs/${job.id}/report`}>Descargar reporte</a>
+                <DownloadLink {...dl} className="btn" href={`/api/jobs/${job.id}/download`}>
+                  <IconDownload /> Descargar PDF
+                </DownloadLink>
+                <DownloadLink {...dl} className="btn secondary" href={`/api/jobs/${job.id}/download?format=epub`}>
+                  <IconDownload /> Kindle (EPUB)
+                </DownloadLink>
+                <DownloadLink {...dl} disabled={dl.disabled || !azw3} className="btn secondary"
+                  href={`/api/jobs/${job.id}/download?format=azw3`}>
+                  <IconDownload /> Kindle (AZW3)
+                </DownloadLink>
+                <DownloadLink {...dl} className="btn ghost" href={`/api/jobs/${job.id}/report`}>Descargar reporte</DownloadLink>
               </div>
               {!azw3 && (
                 <p className="muted">

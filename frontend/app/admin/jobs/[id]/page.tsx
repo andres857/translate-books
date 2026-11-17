@@ -7,6 +7,7 @@ import { IconArrowLeft, IconChevron, IconDownload, IconText, IconWarn } from "..
 import { Compare } from "./compare";
 import { Summary } from "./summary";
 import { Terms } from "./terms";
+import { DownloadLink } from "../../../components/download-link";
 
 type Tab = "summary" | "compare" | "terms";
 // lo primero es ver el resultado: el libro página a página; el resumen técnico va al final
@@ -84,6 +85,15 @@ export default function AdminJobPage({ params }: { params: Promise<{ id: string 
   }
 
   const { job, book } = data;
+  // descargas: si al pulsar ya no está listo (p. ej. recomponiendo), aviso en la página y se recarga el resumen
+  const dl = {
+    jobId: job.id,
+    disabled: job.recomposing,
+    onProblem: (message: string | null) => {
+      setError(message);
+      if (message) void reload();
+    },
+  };
   const ready = data.pages.length > 0 && Boolean(job.output_name);
 
   function tabKey(e: React.KeyboardEvent) {
@@ -118,17 +128,21 @@ export default function AdminJobPage({ params }: { params: Promise<{ id: string 
         )}
         {job.status === "done" && job.mode !== "prepare" && (
           <div className="row">
-            <a className="btn secondary" href={`/api/jobs/${job.id}/report`}><IconText /> Ver reporte</a>
+            <DownloadLink {...dl} className="btn secondary" href={`/api/jobs/${job.id}/report`}>
+              <IconText /> Ver reporte
+            </DownloadLink>
             <div className="split-btn" ref={downloadRef}>
-              <a className="btn" href={`/api/jobs/${job.id}/download`}><IconDownload /> Descargar PDF</a>
+              <DownloadLink {...dl} className="btn" href={`/api/jobs/${job.id}/download`}>
+                <IconDownload /> Descargar PDF
+              </DownloadLink>
               <button type="button" className="btn" aria-label="Otros formatos" aria-haspopup="menu"
                 aria-expanded={downloads} onClick={() => setDownloads((v) => !v)}>
                 <IconChevron width={16} height={16} />
               </button>
               {downloads && (
                 <div className="split-pop" role="menu">
-                  <a role="menuitem" href={`/api/jobs/${job.id}/download?format=epub`}>EPUB</a>
-                  <a role="menuitem" href={`/api/jobs/${job.id}/download?format=azw3`}>AZW3 (Kindle)</a>
+                  <DownloadLink {...dl} role="menuitem" href={`/api/jobs/${job.id}/download?format=epub`}>EPUB</DownloadLink>
+                  <DownloadLink {...dl} role="menuitem" href={`/api/jobs/${job.id}/download?format=azw3`}>AZW3 (Kindle)</DownloadLink>
                 </div>
               )}
             </div>
