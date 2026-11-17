@@ -5,11 +5,14 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getHealth, uploadBook, type JobMode, type OcrLang, type UploadProgress } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { UploadProgressBar } from "./upload-progress";
 import { IconArrowRight, IconInfo, IconUpload, IconWarn, IconX } from "./art";
 
 export function UploadBook({ onClose }: { onClose?: () => void }) {
   const router = useRouter();
+  // Configuración es de administración: a un usuario no se le enlaza una página que no puede abrir
+  const { isAdmin } = useAuth();
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [rights, setRights] = useState(false);
@@ -69,7 +72,9 @@ export function UploadBook({ onClose }: { onClose?: () => void }) {
         <div className="alert" role="status">
           <IconWarn />
           <span>
-            El modo de traducción elegido aún no está listo. Revísalo en <Link href="/admin/settings">Configuración</Link>.
+            {isAdmin
+              ? <>El modo de traducción elegido aún no está listo. Revísalo en <Link href="/admin/settings">Configuración</Link>.</>
+              : "El modo de traducción aún no está listo. Avisa al administrador para que lo revise."}
           </span>
         </div>
       )}
@@ -144,7 +149,8 @@ export function UploadBook({ onClose }: { onClose?: () => void }) {
           <label className="check">
             <input type="checkbox" checked={correct} onChange={(e) => setCorrect(e.target.checked)} />
             <span>
-              Corregir errores del OCR con el modelo de <Link href="/admin/settings">Configuración</Link> (mejora el texto
+              Corregir errores del OCR con el modelo{" "}
+              {isAdmin ? <>de <Link href="/admin/settings">Configuración</Link></> : "configurado"} (mejora el texto
               del EPUB; el PDF conserva la capa de OCR original).
             </span>
           </label>
