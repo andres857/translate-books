@@ -248,6 +248,13 @@ export function Compare({ data, page, onPage, onChanged }: {
     }
   }
 
+  // el bucle de espera de recompose() se corta al desmontar la vista (cambiar de pestaña o de página de la app)
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+
   async function recompose() {
     setBusy("recompose");
     setNotice(null);
@@ -256,8 +263,10 @@ export function Compare({ data, page, onPage, onChanged }: {
       let st = await recomposePage(job.id, page);
       while (st.status === "queued" || st.status === "running") {
         await new Promise((r) => setTimeout(r, 1200));
+        if (!mounted.current) return; // el worker sigue; al volver, la vista recarga el estado
         st = await getJob(job.id);
       }
+      if (!mounted.current) return;
       if (st.status !== "done" || st.recompose_error) {
         setError(st.recompose_error ?? st.error ?? "No se pudo recomponer la página.");
       } else {
@@ -267,9 +276,9 @@ export function Compare({ data, page, onPage, onChanged }: {
       await load();
       onChanged();
     } catch (e) {
-      setError((e as Error).message);
+      if (mounted.current) setError((e as Error).message);
     } finally {
-      setBusy(null);
+      if (mounted.current) setBusy(null);
     }
   }
 
