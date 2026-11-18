@@ -39,7 +39,7 @@ Decisiones (opción recomendada):
   `traductor-backend:latest`, de `:dev` (menos sus 5 de `[dev]`) y de `backend/.venv` eran idénticos (el `.venv`
   solo añade el propio paquete en modo editable): no hubo diferencias que elegir. P. ej. SQLAlchemy 2.1.9,
   FastAPI 0.163.1, Starlette 1.10.0, PyMuPDF 2.1.
-- Sin herramientas nuevas (solo `pip freeze`); procedimiento de actualización en el README («Versiones fijadas del
+- Sin herramientas nuevas (solo `pip freeze`); procedimiento de actualización en el `README.md` del repo («Versiones fijadas del
   backend»). Fuera de alcance: la imagen base `python:3.12-slim-bookworm` y los paquetes apt no se fijan.
 - Tamaño (no se midió la reducción multi-stage, opcional): antes `traductor-backend` 2,45 GB y `:dev` 2,51 GB;
   después, igual (2,45 GB y 2,51 GB): mismas versiones, mismo contenido.

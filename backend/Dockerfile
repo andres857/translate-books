@@ -19,7 +19,7 @@ RUN groupadd -g "${APP_GID}" app && useradd -m -u "${APP_UID}" -g app -d /home/a
 WORKDIR /app
 
 # Dependencias primero (capa en caché mientras no cambien pyproject.toml ni constraints.txt), con las versiones
-# fijadas en constraints.txt (docker-review #04; cómo actualizarlas: docs/docker-review/README.md)
+# fijadas en constraints.txt (docker-review #04; cómo actualizarlas: README.md del repo)
 COPY pyproject.toml constraints.txt ./
 RUN pip install --no-cache-dir -c constraints.txt $(python -c "import tomllib; print(' '.join(tomllib.load(open('pyproject.toml','rb'))['project']['dependencies']))")
 

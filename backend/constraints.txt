@@ -1,7 +1,7 @@
 # Versiones fijadas del backend (docker-review #04). Restricciones de pip (`pip install -c constraints.txt …`):
 # el Dockerfile instala las dependencias de pyproject.toml con este archivo en los stages base/final y las de
 # [dev] (pytest, ruff) en el stage dev, así que producción, el stack dev y backend-test usan las mismas versiones.
-# Cómo actualizarlas: docs/docker-review/README.md, «Versiones fijadas del backend» (regenerar
+# Cómo actualizarlas: README.md del repo, «Versiones fijadas del backend» (regenerar
 # las dos secciones con `pip freeze` de una imagen construida sin restricciones y pasar los tests en contenedor).
 
 # ---- [project.dependencies] y transitivas: `pip freeze` del contenedor api

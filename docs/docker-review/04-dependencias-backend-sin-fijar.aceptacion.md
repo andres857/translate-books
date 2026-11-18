@@ -13,7 +13,7 @@ Ficha: [04-dependencias-backend-sin-fijar.md](04-dependencias-backend-sin-fijar.
 - [x] La suite completa (`-m "not slow and not s3"`) pasa dentro de la imagen construida con las versiones fijadas.
   - Verificado: `docker compose -f docker-compose.yml -f compose.dev.yml run --rm --build backend-test` (imagen `dev` = `base` con las mismas restricciones + `[dev]`) → `All checks passed!` y `190 passed, 1 skipped, 5 deselected`.
 - [x] El README explica cómo actualizar las versiones fijadas.
-  - Verificado: sección «Versiones fijadas del backend» en `docs/docker-review/README.md` (build sin restricciones, `pip freeze` por secciones, tests en contenedor, comprobación tras el deploy); la cabecera de `constraints.txt` remite a ella.
+  - Verificado: sección «Versiones fijadas del backend» en `README.md` del repo, tras «Tests y lint en contenedor» (build sin restricciones, `pip freeze` por secciones, tests en contenedor, comprobación tras el deploy); la cabecera de `constraints.txt`, el Dockerfile y `docs/docker-review/README.md` (una línea con enlace) remiten a ella.
 
 ## Comprobaciones comunes
 
