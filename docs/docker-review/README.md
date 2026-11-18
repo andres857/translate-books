@@ -22,7 +22,7 @@ producción y limpiar restos de la suscripción.
 |---|---|---|---|---|
 | 01 | Medio | [Desarrollar exige Python y Node en el equipo](01-compose-dev-recarga.md) | [criterios](01-compose-dev-recarga.aceptacion.md) | abierto |
 | 02 | Medio | [Tests y lint solo corren con herramientas del host](02-tests-lint-en-contenedor.md) | [criterios](02-tests-lint-en-contenedor.aceptacion.md) | abierto |
-| 03 | Medio | [El contenedor del frontend corre como root y sin healthcheck](03-frontend-root-sin-healthcheck.md) | [criterios](03-frontend-root-sin-healthcheck.aceptacion.md) | abierto |
+| 03 | Medio | [El contenedor del frontend corre como root y sin healthcheck](03-frontend-root-sin-healthcheck.md) | [criterios](03-frontend-root-sin-healthcheck.aceptacion.md) | resuelto |
 | 04 | Medio | [La imagen del backend instala dependencias sin versiones fijadas](04-dependencias-backend-sin-fijar.md) | [criterios](04-dependencias-backend-sin-fijar.aceptacion.md) | abierto |
 | 05 | Bajo | [`.env` y `.env.example` mezclan valores del modo host con los de Docker](05-env-valores-modo-host.md) | [criterios](05-env-valores-modo-host.aceptacion.md) | abierto |
 | 06 | Alto | [Sin copias de seguridad de SQLite ni purga programada](06-datos-copias-purga.md) | [criterios](06-datos-copias-purga.aceptacion.md) | abierto |
