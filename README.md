@@ -32,6 +32,31 @@ Abre http://localhost:3000. Los PDF originales y traducidos quedan en `data/` (n
 > Sin llave de DeepSeek puedes probar la maquetación con `FAKE_TRANSLATOR=true` en `.env`
 > (inserta el texto original alargado un 25 % para simular la expansión del español).
 
+## Desarrollo con Docker (recarga en caliente)
+
+Solo hace falta Docker: `compose.dev.yml` se superpone a `docker-compose.yml` con los mismos puertos y la misma BD
+(`data/`), así que **no puede estar arriba a la vez que el stack de producción**.
+
+```bash
+docker compose exec -T api python -m app.cli active-jobs   # sin trabajos activos antes de bajar producción
+docker compose down                                         # baja producción (los datos de data/ se quedan)
+docker compose -f docker-compose.yml -f compose.dev.yml up -d --build
+```
+
+- **frontend**: `next dev` con `frontend/` montado; los cambios se ven al guardar (el rewrite `/api` se lee al
+  arrancar `next dev`). Si cambia `package.json`, añade `-V` al `up` para renovar el volumen de `node_modules`.
+- **api**: `uvicorn --reload` sobre `backend/app` montado (también `alembic/`, `tests/`, `scripts/`).
+- **worker**: usa el código montado pero no se recarga solo (reiniciarlo corta la traducción en curso). Tras editar
+  el pipeline: `docker compose -f docker-compose.yml -f compose.dev.yml exec -T api python -m app.cli active-jobs` y,
+  sin trabajos activos, `docker compose -f docker-compose.yml -f compose.dev.yml restart worker`.
+
+Volver a producción:
+
+```bash
+docker compose -f docker-compose.yml -f compose.dev.yml down
+docker compose up -d --build
+```
+
 ## Desarrollo local (sin Docker)
 
 ```bash

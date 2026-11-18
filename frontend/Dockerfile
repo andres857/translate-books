@@ -8,6 +8,23 @@ ARG BACKEND_URL=http://api:8000
 ENV BACKEND_URL=$BACKEND_URL NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
+# Desarrollo (compose.dev.yml, `target: dev`): `next dev` con recarga y todas las devDependencies, así que sirve
+# también para tsc, lint, vitest y build en contenedor. El build de producción no pasa por este stage.
+FROM node:22-alpine AS dev
+WORKDIR /app
+RUN chown node:node /app
+USER node
+COPY --chown=node:node package.json package-lock.json* ./
+RUN npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+COPY --chown=node:node . .
+# punto de montaje del volumen anónimo de .next (compose.dev.yml): así nace con dueño node
+RUN mkdir -p .next
+# en dev el rewrite /api se evalúa al arrancar `next dev`
+ENV BACKEND_URL=http://api:8000 NEXT_TELEMETRY_DISABLED=1
+EXPOSE 3000
+CMD ["npx", "next", "dev", "--hostname", "0.0.0.0", "--port", "3000"]
+
+# Producción (stage final: lo que construye `docker compose up --build` sin target)
 FROM node:22-alpine
 WORKDIR /app
 # también en ejecución: los Server Components leen la sesión y los datos iniciales del api

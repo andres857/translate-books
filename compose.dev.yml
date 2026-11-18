@@ -1,0 +1,45 @@
+# Stack de desarrollo con recarga: se superpone a docker-compose.yml (mismos puertos y misma BD ./data).
+#   docker compose -f docker-compose.yml -f compose.dev.yml up -d --build
+# No puede estar arriba a la vez que el de producción (mismos puertos y misma BD). Vuelta a producción:
+#   docker compose -f docker-compose.yml -f compose.dev.yml down && docker compose up -d --build
+#
+# Se montan solo las carpetas de código del backend (no backend/.env, .venv ni data: config.py lee ".env" del
+# directorio de trabajo y con backend/ entero leería los valores del modo host).
+x-backend-dev-code: &backend-dev-code
+  - ./backend/app:/app/app
+  - ./backend/alembic:/app/alembic
+  - ./backend/alembic.ini:/app/alembic.ini:ro
+  - ./backend/pyproject.toml:/app/pyproject.toml:ro
+  - ./backend/tests:/app/tests
+  - ./backend/scripts:/app/scripts
+
+services:
+  api:
+    image: traductor-backend:dev
+    build:
+      target: dev
+    # --reload-dir app: solo vigila el código, no tests/ ni data
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir app"
+    volumes: *backend-dev-code
+
+  # Sin recarga automática a propósito: comparte la BD con producción y reiniciarlo corta la traducción en curso.
+  # Tras editar el pipeline: docker compose -f docker-compose.yml -f compose.dev.yml exec -T api python -m app.cli active-jobs
+  # y, sin trabajos activos, ... restart worker.
+  worker:
+    image: traductor-backend:dev
+    volumes: *backend-dev-code
+
+  storage-init:
+    image: traductor-backend:dev
+
+  frontend:
+    image: traductor-frontend:dev
+    build:
+      target: dev
+    environment:
+      BACKEND_URL: http://api:8000
+    volumes:
+      - ./frontend:/app
+      # node_modules y .next del contenedor (Linux/alpine), no los del host
+      - /app/node_modules
+      - /app/.next
