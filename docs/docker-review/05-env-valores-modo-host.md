@@ -2,7 +2,7 @@
 
 - **Severidad:** Bajo
 - **Categoría:** Configuración
-- **Estado:** abierto
+- **Estado:** resuelto · commit(s) `42b0b22`
 - **Ubicación:** `.env.example`, `.env` (local, no versionado), `docker-compose.yml` (`x-backend.environment`)
 - **Aceptación:** [05-env-valores-modo-host.aceptacion.md](05-env-valores-modo-host.aceptacion.md)
 
