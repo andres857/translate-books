@@ -2,7 +2,7 @@
 
 - **Severidad:** Bajo
 - **Categoría:** Limpieza
-- **Estado:** abierto
+- **Estado:** resuelto · commit(s) `151bd02`
 - **Ubicación:** `backend/app/runtime_settings.py:84,87`, `backend/app/playground.py:45` (comentario), `frontend/app/admin/playground/shared.ts:35`
 - **Aceptación:** [07-restos-suscripcion.aceptacion.md](07-restos-suscripcion.aceptacion.md)
 
