@@ -50,7 +50,7 @@ services:
   #   docker compose -f docker-compose.yml -f compose.dev.yml run --rm backend-test ruff check app tests
   #   docker compose -f docker-compose.yml -f compose.dev.yml run --rm backend-test python -m pytest -q -m "not slow and not s3"
   #   docker compose -f docker-compose.yml -f compose.dev.yml run --rm frontend-test sh -c 'npx tsc --noEmit && npm run lint && npm run test && node ../handoff/check.mjs app lib'
-  # Tras cambiar dependencias (pyproject.toml, package.json): añadir --build al run.
+  # Tras cambiar dependencias (pyproject.toml, constraints.txt, package.json): añadir --build al run.
   backend-test:
     profiles: [tools]
     image: traductor-backend:dev

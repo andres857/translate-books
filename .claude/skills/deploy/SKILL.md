@@ -31,7 +31,7 @@ DC="docker compose -f docker-compose.yml -f compose.dev.yml"
   `npm run build` y `node ../handoff/check.mjs app lib` (0 problemas). Sueltos: `$DC run --rm frontend-test npm run lint`.
   El smoke test de navegador (`npm run test:e2e`) se ejecuta después de desplegar, con
   `E2E_USER_EMAIL`/`E2E_USER_PASSWORD` de una cuenta `user`.
-- Si cambió `backend/pyproject.toml` o `frontend/package.json`: añade `--build` al `run` (reconstruye la imagen `dev`).
+- Si cambió `backend/pyproject.toml`, `backend/constraints.txt` o `frontend/package.json`: añade `--build` al `run` (reconstruye la imagen `dev`).
 
 Alternativa en el host, si ya existe el entorno local (opcional): `cd backend && .venv/bin/ruff check app tests &&
 .venv/bin/python -m pytest -q -m "not slow and not s3"`; `cd frontend && npx tsc --noEmit && npm run lint && npm run test`.

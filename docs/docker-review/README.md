@@ -35,6 +35,26 @@ producción y limpiar restos de la suscripción.
 3. #04 (versiones fijadas; se verifica con los tests en contenedor de #02).
 4. #05 (`.env`) y #06 (copias y purga; toca datos: con copia previa).
 
+## Versiones fijadas del backend
+
+`backend/constraints.txt` (#04) fija con `==` todas las dependencias de Python y sus transitivas. El Dockerfile lo pasa
+como restricciones (`pip install -c constraints.txt …`) a las de `[project.dependencies]` (stages `base` y final) y a
+las de `[dev]` (stage `dev`: stack dev y `backend-test`), así que producción y tests usan las mismas versiones. Tiene
+dos secciones: dependencias del proyecto y, al final, las de `[dev]` (pytest, ruff y sus transitivas).
+
+Para actualizarlas (o al añadir una dependencia en `pyproject.toml`), desde la raíz del repo:
+
+1. Construir sin restricciones en una imagen aparte: copiar el Dockerfile a un archivo temporal quitando los
+   `-c constraints.txt` y `docker build -f <temporal> -t traductor-backend:upd backend` (y `--target dev -t
+   traductor-backend:upd-dev`).
+2. `docker run --rm --entrypoint pip traductor-backend:upd freeze` → sección de dependencias del proyecto;
+   las líneas que añade el `freeze` de `upd-dev` → sección `[dev]`. Conservar la cabecera del archivo.
+3. `docker compose -f docker-compose.yml -f compose.dev.yml run --rm --build backend-test` en verde; revisar el diff
+   de `constraints.txt` (versiones mayores) antes del commit; borrar las imágenes `upd`.
+4. Desplegar (skill `deploy`) y comprobar que `docker compose exec -T api pip freeze` coincide con la primera sección.
+
+Una dependencia nueva que falte en el archivo se instalaría sin fijar: el paso 4 lo detecta (línea de más en el diff).
+
 ## Comportamientos de regresión
 
 - Stack de producción con la skill `deploy`: login, Inicio, revisión del libro #1, Configuración (sin guardar),

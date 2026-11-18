@@ -18,9 +18,10 @@ RUN groupadd -g "${APP_GID}" app && useradd -m -u "${APP_UID}" -g app -d /home/a
 
 WORKDIR /app
 
-# Dependencias primero (capa en caché mientras no cambie pyproject.toml)
-COPY pyproject.toml ./
-RUN pip install --no-cache-dir $(python -c "import tomllib; print(' '.join(tomllib.load(open('pyproject.toml','rb'))['project']['dependencies']))")
+# Dependencias primero (capa en caché mientras no cambien pyproject.toml ni constraints.txt), con las versiones
+# fijadas en constraints.txt (docker-review #04; cómo actualizarlas: docs/docker-review/README.md)
+COPY pyproject.toml constraints.txt ./
+RUN pip install --no-cache-dir -c constraints.txt $(python -c "import tomllib; print(' '.join(tomllib.load(open('pyproject.toml','rb'))['project']['dependencies']))")
 
 ENV FONTS_DIRS=/app/fonts:/usr/share/fonts/truetype/noto \
     HOME=/home/app
@@ -32,7 +33,8 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 # Desarrollo (compose.dev.yml, `target: dev`): las mismas dependencias más las de [dev] (pytest, ruff), sin
 # instalar el paquete (el código se importa desde /app, montado en dev). Sirve también para tests y lint.
 FROM base AS dev
-RUN pip install --no-cache-dir $(python -c "import tomllib; print(' '.join(tomllib.load(open('pyproject.toml','rb'))['project']['optional-dependencies']['dev']))") \
+# Mismo constraints.txt: el stack dev y backend-test usan las versiones de producción
+RUN pip install --no-cache-dir -c constraints.txt $(python -c "import tomllib; print(' '.join(tomllib.load(open('pyproject.toml','rb'))['project']['optional-dependencies']['dev']))") \
     && chown app:app /app
 COPY --chown=app:app . .
 USER app
