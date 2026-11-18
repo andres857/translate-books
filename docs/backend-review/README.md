@@ -190,10 +190,17 @@ localhost:3100 y libros QA sin texto o con texto mínimo; **ninguna llamada a De
   vuelta y desactivación (#17); login, sesión, logout y bitácora (#16); borrar libros QA desde Inicio y desde el
   Playground sin filas suyas en la BD (#09, #13, #20).
 
-Siguen pendientes **#01 y #03** (corregir un bloque en la UI y recomponer esa misma página): hace falta un libro QA
-traducido con texto, y traducirlo llama a DeepSeek; la UI solo deja editar libros en modo «translate». Sin gastar se
-comprobó lo que cambiaron esas fichas: recomponer dos veces → 409, guardar un bloque durante la recomposición → 409, la
-recomposición termina sin error, y guardar un bloque (libro preparado) persiste.
+Las 2 restantes (**#01 y #03**, corregir un bloque en la UI y recomponer esa misma página) se cerraron después en una
+pasada aparte, sin gastar: un libro QA de 1 página y 1 bloque traducido con el traductor falso dentro del contenedor `api`
+(`worker.process` con `runtime_settings.load` parcheado solo en ese proceso); en la UI, corregir y guardar el bloque
+(`edited: true`, persiste al recargar), «Recomponer página», guardar otra corrección durante la recomposición → 409 y
+segunda recomposición → 409; al terminar, `done` sin `recompose_error`, el bloque conserva la corrección y la vista
+Comparar y el PDF muestran el texto corregido. La recomposición la ejecutó `worker.process` con el traductor falso (worker
+desplegado parado durante la prueba): con DeepSeek activo, `translate_segments` traduce también los bloques editados
+antes de imponer la corrección y la caché va por modelo, así que habría llamado al modelo. Sin actividad del worker ni
+filas nuevas `deepseek-flash` en la caché. Limpieza: libro QA borrado desde la API, fila `fake` de la caché borrada,
+qa-admin desactivada y sin sesiones abiertas, credenciales borradas; el libro #1 sigue con 192 páginas y 3345 bloques.
+**Ninguna casilla pendiente.**
 
 Limpieza: libros QA #2, #3 y #4 borrados (con sus archivos); qa-user desactivada desde Usuarios y qa-admin con el servicio
 de usuarios de la app dentro del contenedor `api` (no puede desactivarse a sí misma); sin sesiones QA abiertas;
