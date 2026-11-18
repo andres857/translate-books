@@ -32,7 +32,6 @@ export function plain(html: string | null | undefined): string {
 }
 
 export function variantName(v: Pick<VariantInput, "provider" | "model" | "thinking">): string {
-  if ((v.provider as string) === "claude") return `Suscripción de Claude (retirado) · ${v.model}`; // historial antiguo
   if (v.provider === "deepseek") return `DeepSeek · ${v.model || "deepseek"} · ${THINKING[v.thinking || "disabled"] ?? v.thinking}`;
   return "Prueba sin API";
 }

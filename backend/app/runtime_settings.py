@@ -81,10 +81,10 @@ def load() -> RuntimeSettings:
         return current
     names = {f.name for f in fields(RuntimeSettings)}
     for key, value in stored.items():
-        if key in names:  # claves de modos retirados (p. ej. claude_*) se ignoran
+        if key in names:  # las claves desconocidas se ignoran
             setattr(current, key, value)
     current.deepseek_model = normalize_model(current.deepseek_model)
-    if current.provider not in PROVIDERS:  # ajustes guardados con el modo de suscripción de Claude, ya retirado
+    if current.provider not in PROVIDERS:  # un modo desconocido no bloquea guardar ajustes nuevos
         current.provider = "deepseek"
     return current
 

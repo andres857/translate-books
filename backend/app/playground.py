@@ -42,7 +42,7 @@ log = logging.getLogger(__name__)
 
 MAX_VARIANTS = 4
 MAX_PAGES = 80  # alcance «varias páginas»; capítulo y libro no tienen tope (se pide confirmación)
-CONFIRM_BLOCKS = 600  # por encima, con variantes que consumen suscripción o saldo, se pide confirmar
+CONFIRM_BLOCKS = 600  # por encima, con variantes que consumen saldo, se pide confirmar
 SCOPES = ("page", "pages", "chapter", "book")
 TASKS = ("translate", "correct")
 PROVIDERS = ("deepseek", "fake")
