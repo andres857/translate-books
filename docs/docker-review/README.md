@@ -43,3 +43,70 @@ Versiones fijadas del backend (#04): sección «Versiones fijadas del backend» 
   Playground (lista), descargas del libro #1.
 - `data/app.db` intacta (mismas filas por tabla); trabajos en curso nunca se interrumpen sin comprobar `active-jobs`.
 - No se gasta DeepSeek ni se cambian los ajustes globales.
+
+## Estado final (18 de noviembre de 2026)
+
+Las 7 fichas están resueltas (`git log --oneline --grep "docker-review #"`):
+
+| # | Ficha | Commit del cambio | Commits de docs / estado | Estado |
+|---|---|---|---|---|
+| 01 | Stack de desarrollo con recarga (`compose.dev.yml`) | `aa65741` | `d4eaf78` | resuelto |
+| 02 | Tests y lint en contenedor (`backend-test`, `frontend-test`) | `dd60b32` | `5c72bfd` | resuelto |
+| 03 | Frontend sin root (`USER node`) y con healthcheck | `fb52dad` | `4d1d7f5` | resuelto |
+| 04 | Versiones fijadas del backend (`backend/constraints.txt`) | `7083dd7` | `18f4eff`, `24e7de6` | resuelto |
+| 05 | `.env.example` solo con valores de Docker y modo por variable | `42b0b22` | `64cfc81` | resuelto |
+| 06 | Servicio `backup`: copia diaria consistente, retención y purga | `8cffa4b` | `f72efd6` | resuelto |
+| 07 | Restos del modo de suscripción de Claude retirados | `151bd02` | `9b16be4` | resuelto |
+
+### Comandos (detalle en el [README del repo](../../README.md))
+
+- **Producción**: `docker compose up -d --build` (o la skill `deploy`); `docker compose ps` → `api` y `frontend`
+  healthy, `worker`, `backup`, `cdn` y `seaweedfs` arriba, `storage-init` termina con 0. Antes de reiniciar
+  `api`/`worker`: `docker compose exec -T api python -m app.cli active-jobs`.
+- **Desarrollo** ([«Desarrollo con Docker»](../../README.md#desarrollo-con-docker-recarga-en-caliente)): con
+  `active-jobs` vacío, `docker compose down` y `docker compose -f docker-compose.yml -f compose.dev.yml up -d --build`;
+  volver con `… -f compose.dev.yml down` y `docker compose up -d --build`. No conviven con producción.
+- **Tests y lint** ([«Tests y lint en contenedor»](../../README.md#tests-y-lint-en-contenedor)):
+  `DC="docker compose -f docker-compose.yml -f compose.dev.yml"`; `$DC run --rm backend-test` (ruff + pytest) y
+  `$DC run --rm frontend-test` (tsc, lint, vitest, build, `check.mjs`); `--build` tras cambiar dependencias.
+- **Copia** ([«Copias de seguridad y purga»](../../README.md#copias-de-seguridad-y-purga-servicio-backup)): diaria
+  en el servicio `backup`; a mano `docker compose run --rm backup python -m app.cli backup once`.
+- **Restauración**: `active-jobs` vacío, `docker compose stop backup worker api`, apartar `data/app.db` con su
+  `-wal`/`-shm`, copiar `data/backups/app-AAAA-MM-DD.db` a `data/app.db`, `docker compose up -d` y comprobar
+  `/api/health`; prueba sin tocar la BD en un contenedor aparte (puerto 8765), según el README del repo.
+
+### Tamaños de imagen (`docker images`)
+
+| Imagen | Línea base (17 nov) | Final (18 nov) |
+|---|---|---|
+| `traductor-backend:latest` (api, worker, backup) | 2,45 GB | 2,45 GB |
+| `traductor_libros-frontend:latest` | 336 MB | 336 MB |
+| `traductor-backend:dev` (stack dev y `backend-test`) | — | 2,51 GB |
+| `traductor-frontend:dev` (stack dev y `frontend-test`) | — | 1,41 GB |
+
+`traductor-test-frontend:latest` (335 MB, de hace 6 días) no la crea este repo ni esta revisión; se deja como estaba.
+
+### Comprobaciones del cierre (18 nov)
+
+- Producción: `docker compose ps` sano (`api` y `frontend` healthy; `worker`, `backup`, `cdn`, `seaweedfs` arriba;
+  `storage-init` Exited (0)), antes del cierre y otra vez al volver de dev.
+- `backend-test`: `ruff check app tests` → All checks passed!; pytest → 194 passed, 1 skipped, 5 deselected.
+  `frontend-test`: exit 0 (tsc sin errores, lint limpio, 20 tests en 3 archivos, `next build` correcto,
+  `check.mjs`: 59 archivos, 0 problemas). sha256 de `data/app.db` igual antes y después de ambos (`59034864…`).
+- Desarrollo: `config -q` → exit 0; con `active-jobs` vacío se bajó producción, el stack dev levantó
+  (`api` healthy) y `/login` → 200, `/api/health` → `{"ok":true}`; luego se volvió a producción con
+  `docker compose up -d --build`. Tras ese reinicio el hash de `data/app.db` cambió (checkpoint del WAL al parar),
+  pero las filas de todas las tablas coinciden con las de la copia del día.
+- Copia: `backup once` → `copia: /data/backups/app-2026-11-18.db (25.3 MB, integrity_check ok)`, purga con 0 filas
+  borradas; `PRAGMA integrity_check` desde el host sobre la copia → ok.
+- Sin sesión: `:8000/api/health` → `{"ok":true}`; `:3100/login` → 200; por `:3100`, `/api/jobs`, `/api/settings`,
+  `/api/users` y `/api/admin/jobs/1/summary` → 401.
+- Libro #1 (solo lectura): 192 páginas, 3345 bloques; cabeza de migraciones `f3b5d7e9a1c4`.
+
+### Pendiente de verificación manual
+
+No hay cuentas QA autorizadas, así que lo que exige sesión queda para el usuario en http://localhost:3100:
+
+- Login (#03): iniciar sesión funciona igual que antes (o `npm run test:e2e` con una cuenta `user`).
+- Regresión con sesión (#01, #03, #04, #05, #06): Inicio, revisión del libro #1 y Configuración (sin guardar).
+- Admin (#07): Configuración muestra el método actual y Playground → Historial se abre.
