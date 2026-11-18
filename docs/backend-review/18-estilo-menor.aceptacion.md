@@ -21,6 +21,6 @@ Ficha: [18-estilo-menor.md](18-estilo-menor.md). Marca cada casilla (`- [x]`) so
   - Verificado: `ruff check app tests` → `All checks passed!`; `test_alembic_check` en verde.
 - [x] Desplegado con la skill `deploy`: `curl -s localhost:8000/api/health` devuelve `{"ok":true}` y `http://localhost:3100/login` responde 200.
   - Verificado: sin trabajos activos; `api` y `worker` reconstruidos; health `{"ok":true}`, `/login` 200 y el contenedor `api` contiene `_build_lock`.
-- [ ] Regresión: subir un PDF, ver el progreso, cancelar, reanudar y descargar (PDF/EPUB) como `user` siguen funcionando (`tests/test_api.py`, `tests/test_jobs_upload.py` en verde).
+- [x] Regresión: subir un PDF, ver el progreso, cancelar, reanudar y descargar (PDF/EPUB) como `user` siguen funcionando (`tests/test_api.py`, `tests/test_jobs_upload.py` en verde).
   - Verificado (parte automática): `tests/test_api.py` y `tests/test_jobs_upload.py` en verde.
-  - Pendiente de verificación manual: subir, cancelar, reanudar y descargar PDF/EPUB en localhost:3100 (cuentas QA no autorizadas en esta tarea).
+  - Verificado (app desplegada): Chrome como qa-user: login → «Libros» sin ningún libro ajeno (`/api/jobs` vacío al empezar, `/api/jobs/1` 404); subir un PDF QA de 120 páginas en blanco solo con imagen (OCR local, 0 bloques, 0 llamadas al modelo) con «Traducir libro» → /jobs/2, la barra de progreso avanza por polling (0 → 4 %); «Cancelar» → `cancelled` y sigue `cancelled` 4 s después (el worker no lo pisa), aparece «Reanudar» → `running` → «Tu libro está listo»; «Descargar PDF» (`original (ES).pdf`, %PDF) y «Kindle (EPUB)» (`original (ES).epub`, PK); `/api/jobs/2/events` 404; el inicio solo lista qa-be-imagenes.pdf; sin errores de página.

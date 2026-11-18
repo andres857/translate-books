@@ -21,6 +21,6 @@ Ficha: [16-tablas-crecen-sin-limite.md](16-tablas-crecen-sin-limite.md). Marca c
   - Verificado: `ruff check app tests` → `All checks passed!`; `test_alembic_check` en verde.
 - [x] Desplegado con la skill `deploy`: `curl -s localhost:8000/api/health` devuelve `{"ok":true}` y `http://localhost:3100/login` responde 200.
   - Verificado: sin trabajos activos; `api` y `worker` reconstruidos; health `{"ok":true}`, `/login` 200; `docker compose exec -T api python -m app.cli purge --help` muestra `--dry-run`.
-- [ ] Regresión: login, sesión activa y bitácora de seguridad siguen funcionando.
+- [x] Regresión: login, sesión activa y bitácora de seguridad siguen funcionando.
   - Verificado (parte automática): `tests/test_auth*.py` en verde (login, logout, rate limit, sesiones y bitácora); la purga no cambia ningún endpoint.
-  - Pendiente de verificación manual: login y bitácora desde localhost:3100 (cuentas QA no autorizadas en esta tarea).
+  - Verificado (app desplegada): Chrome como qa-user: login con contraseña mala → 401; login por la UI → / y `/api/auth/me` 200 (qa-user, user); al recargar sigue dentro (sesión activa); «Cerrar sesión» → /login y `/api/auth/me` 401; tras desactivarla desde Usuarios, su login → 401. La bitácora (`auth_security_events`, leída en solo lectura; la app no tiene vista para ella) registra en orden `login_failed`, `login`, `logout`, `login` (qa-admin), `reauth`, `user_updated` (actor qa-admin) y `login_failed`.

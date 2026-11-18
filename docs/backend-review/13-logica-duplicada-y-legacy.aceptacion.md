@@ -23,5 +23,6 @@ Ficha: [13-logica-duplicada-y-legacy.md](13-logica-duplicada-y-legacy.md). Marca
   - Verificado: `.venv/bin/ruff check app tests` → «All checks passed!»; `test_alembic_check` dentro de la suite en verde.
 - [x] Desplegado con la skill `deploy`: `curl -s localhost:8000/api/health` devuelve `{"ok":true}` y `http://localhost:3100/login` responde 200.
   - Verificado: sin trabajos activos, `docker compose up -d --build --no-deps api worker`; health `{"ok":true}`, `/login` 200 y `import app.jobs_service` dentro del contenedor.
-- [ ] Regresión: borrar un libro desde Inicio (admin) y desde el Playground sigue funcionando.
-  - Pendiente de verificación manual: requiere cuenta admin en la app (cuentas QA no autorizadas). Cubierto por los tests de ambos DELETE (`test_playground`, `test_admin`), sin cambios.
+- [x] Regresión: borrar un libro desde Inicio (admin) y desde el Playground sigue funcionando.
+  - Verificado (parte automática): cubierto por los tests de ambos DELETE (`test_playground`, `test_admin`), sin cambios.
+  - Verificado (app desplegada): borrar desde la app (Chrome como qa-admin) los libros QA: #4 (preparado, con 1 bloque, 1 evaluación y 1 intento del Playground, 1 entrada de glosario y 1 término propios) desde el Playground («Eliminar …» → confirmar) y #3 (1 página, glosario y término propios) y #2 (120 páginas) desde Inicio («Eliminar» → «Se eliminó «original».», `/api/jobs/N` 404). En `data/app.db` (solo lectura): 0 filas en jobs, pages, segments, playground_runs, playground_attempts, documents, glossary y protected_terms para los tres; sin páginas ni bloques huérfanos; sin carpetas `outputs/job_2..4` ni sus `uploads/<sha>`; el libro #1 sigue con 192 páginas, 3345 bloques y 149 entradas de glosario.

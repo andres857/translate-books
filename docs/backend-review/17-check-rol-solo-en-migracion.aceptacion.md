@@ -21,6 +21,6 @@ Ficha: [17-check-rol-solo-en-migracion.md](17-check-rol-solo-en-migracion.md). M
   - Verificado: `ruff check app tests` → `All checks passed!`; `test_alembic_check` en verde.
 - [x] Desplegado con la skill `deploy`: `curl -s localhost:8000/api/health` devuelve `{"ok":true}` y `http://localhost:3100/login` responde 200.
   - Verificado: sin trabajos activos; `api` y `worker` reconstruidos; health `{"ok":true}`, `/login` 200, versión de la BD `f3b5d7e9a1c4`.
-- [ ] Regresión: gestión de usuarios del admin sigue funcionando.
+- [x] Regresión: gestión de usuarios del admin sigue funcionando.
   - Verificado (parte automática): `test_patch_rejects_email_unknown_and_bad_role`, `test_role_change_deactivation_and_reset_revoke_sessions` y `test_user_cannot_manage_accounts` (tests/test_auth.py) en verde.
-  - Pendiente de verificación manual: alta, cambio de rol y desactivación desde localhost:3100 (cuentas QA no autorizadas en esta tarea).
+  - Verificado (app desplegada): Chrome como qa-admin en /admin/users: la lista muestra las 4 cuentas con rol, estado y alta; cambiar el rol de qa-user a Administrador (pide «Confirma tu contraseña») → «qa-user@astrobooks.local ahora es administrador. Sus sesiones se cerraron.» y de vuelta a Usuario → «… ahora es usuario…»; desactivación de qa-user y qa-admin al terminar (ver Estado final del README). Sin alta de cuentas nuevas para no dejar cuentas QA extra (cubierta por los tests).

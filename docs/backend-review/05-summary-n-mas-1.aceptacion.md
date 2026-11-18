@@ -21,6 +21,6 @@ Ficha: [05-summary-n-mas-1.md](05-summary-n-mas-1.md). Marca cada casilla (`- [x
   - Verificado: `ruff check app tests` → `All checks passed!` y `test_alembic_check` en verde (dentro de la suite).
 - [x] Desplegado con la skill `deploy`: `curl -s localhost:8000/api/health` devuelve `{"ok":true}` y `http://localhost:3100/login` responde 200.
   - Verificado: `active-jobs` → «sin trabajos activos»; reconstruidos `api` y `worker`; health `{"ok":true}`, `/login` 200 y el contenedor `api` contiene la consulta agregada (`func.min(case`).
-- [ ] Regresión: la pantalla Resumen del admin muestra los mismos totales que antes para el libro QA.
+- [x] Regresión: la pantalla Resumen del admin muestra los mismos totales que antes para el libro QA.
   - Verificado (parte automática): el JSON del resumen del libro #1 es idéntico byte a byte (mismo sha256) sobre la copia de la BD real, y la pantalla consume solo ese JSON.
-  - Pendiente de verificación manual: abrir la pantalla Resumen del admin en localhost:3100 con el libro QA (cuentas QA no autorizadas en esta tarea).
+  - Verificado (app desplegada): Chrome como qa-admin en /admin/jobs/3 (libro QA en blanco traducido sin modelo), pestaña «Resumen»: Páginas 1, Correctas 1, Para revisar 0, 100 %, Bloques 0, Corregidos 0 y las validaciones del libro, los mismos totales que `GET /api/admin/jobs/3/summary` (`{pages:1, ok:1, review:0, by_kind:{blank:1}, segments:0, edited:0}`); sin errores de página.

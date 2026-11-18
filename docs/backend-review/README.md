@@ -174,15 +174,27 @@ De 10 a 12 migraciones, lineales; cabeza `f3b5d7e9a1c4` (`alembic heads`), la mi
 - `frontend/` (lo tocó #08): `npx tsc --noEmit` sin errores, `npm run lint` sin avisos, `npm run test` 20 passed
   (3 archivos), `npm run build` correcto y `node ../handoff/check.mjs app lib` 59 archivos, 0 problemas.
 
-### Pendiente de verificación manual
+### Regresión con sesión en la app desplegada (18 de noviembre de 2026)
 
-Necesita cuentas en la app (las QA no estaban autorizadas); los tests automáticos de cada caso están en verde.
+Con las cuentas QA `qa-admin@` y `qa-user@astrobooks.local` (autorizadas solo para esta pasada), Chrome (Playwright) contra
+localhost:3100 y libros QA sin texto o con texto mínimo; **ninguna llamada a DeepSeek** (comprobado en el log del worker).
+16 de las 18 casillas pendientes quedan en [x]:
 
-- `user`: subir, ver el progreso (polling), cancelar, reanudar y descargar PDF/EPUB (#02, #04, #06, #07, #18).
-- `user`: el rótulo del método de traducción («API · deepseek-…») en la barra lateral y el inicio (#08).
-- `admin`: corregir un bloque y recomponer su página (#01, #03); vista previa de páginas (#12).
-- `admin`: pantalla Resumen con los mismos totales (#05) y Configuración completa (#08).
-- `admin`: borrar un libro QA desde Inicio y desde el Playground, sin filas suyas en la BD (#09, #13, #20).
-- `admin`: Glosario y términos (añadir, editar, borrar y aviso «Ese término ya existe.») (#10, #11); Playground
-  (estimar y ejecutar con prueba sin API) y descargas (#11).
-- `admin`: alta, cambio de rol y desactivación de usuarios (#17); login, sesión activa y bitácora (#16).
+- `user` (#02, #04, #06, #07, #18): login, solo sus libros (`/api/jobs/1` 404), subir un PDF de 120 páginas en blanco, ver el
+  progreso por polling, cancelar (sigue `cancelled`), reanudar, descargar PDF y EPUB; `/api/jobs/<id>/events` 404.
+- #08: rótulo «API · deepseek-flash» en la barra y el inicio como user, `/api/settings` sin `deepseek_key_hint`;
+  Configuración del admin se ve completa (no se guardó).
+- `admin`: Resumen con los totales del JSON (#05); vista previa original/traducida y recomponer una página (#12);
+  Glosario y términos: añadir, editar, borrar, «Ese término ya existe.» (#10) y categoría inválida → 422 (#11);
+  Playground: lista, alcance, estimar y evaluación con la variante sin API (#11); Usuarios: lista, cambio de rol ida y
+  vuelta y desactivación (#17); login, sesión, logout y bitácora (#16); borrar libros QA desde Inicio y desde el
+  Playground sin filas suyas en la BD (#09, #13, #20).
+
+Siguen pendientes **#01 y #03** (corregir un bloque en la UI y recomponer esa misma página): hace falta un libro QA
+traducido con texto, y traducirlo llama a DeepSeek; la UI solo deja editar libros en modo «translate». Sin gastar se
+comprobó lo que cambiaron esas fichas: recomponer dos veces → 409, guardar un bloque durante la recomposición → 409, la
+recomposición termina sin error, y guardar un bloque (libro preparado) persiste.
+
+Limpieza: libros QA #2, #3 y #4 borrados (con sus archivos); qa-user desactivada desde Usuarios y qa-admin con el servicio
+de usuarios de la app dentro del contenedor `api` (no puede desactivarse a sí misma); sin sesiones QA abiertas;
+credenciales borradas del scratchpad. El libro #1 sigue con 192 páginas y 3345 bloques (`data/app.db` en solo lectura).
