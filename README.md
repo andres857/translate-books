@@ -57,6 +57,23 @@ docker compose -f docker-compose.yml -f compose.dev.yml down
 docker compose up -d --build
 ```
 
+### Tests y lint en contenedor
+
+Los servicios `backend-test` y `frontend-test` de `compose.dev.yml` (perfil `tools`: `up` no los arranca) usan las
+imágenes `dev` con el código montado. No montan `data/` ni leen `.env`: los tests usan su BD temporal en
+`backend/tests/output`. Funcionan con el stack de producción o el de desarrollo arriba (o ninguno).
+
+```bash
+DC="docker compose -f docker-compose.yml -f compose.dev.yml"
+$DC run --rm backend-test                      # ruff check app tests + pytest -q -m "not slow and not s3"
+$DC run --rm backend-test ruff check app tests
+$DC run --rm backend-test python -m pytest -q tests/test_auth.py
+$DC run --rm frontend-test                     # tsc, lint, vitest, next build y handoff/check.mjs
+$DC run --rm frontend-test npm run lint
+```
+
+Tras cambiar `pyproject.toml` o `package.json`, añade `--build` al `run` para reconstruir la imagen `dev`.
+
 ## Desarrollo local (sin Docker)
 
 ```bash

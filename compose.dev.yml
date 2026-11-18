@@ -43,3 +43,48 @@ services:
       # node_modules y .next del contenedor (Linux/alpine), no los del host
       - /app/node_modules
       - /app/.next
+
+  # ---- Tests y lint en contenedor (perfil "tools": `up` no los arranca; `run` sí). No heredan nada de
+  # x-backend (sin env_file .env, sin ./data ni DATABASE_URL de producción): los tests usan su BD temporal
+  # en backend/tests/output (ignorada por git y por .dockerignore, como en el host), nunca data/app.db.
+  #   docker compose -f docker-compose.yml -f compose.dev.yml run --rm backend-test ruff check app tests
+  #   docker compose -f docker-compose.yml -f compose.dev.yml run --rm backend-test python -m pytest -q -m "not slow and not s3"
+  #   docker compose -f docker-compose.yml -f compose.dev.yml run --rm frontend-test sh -c 'npx tsc --noEmit && npm run lint && npm run test && node ../handoff/check.mjs app lib'
+  # Tras cambiar dependencias (pyproject.toml, package.json): añadir --build al run.
+  backend-test:
+    profiles: [tools]
+    image: traductor-backend:dev
+    build:
+      context: ./backend
+      target: dev
+      args:
+        APP_UID: ${APP_UID:-1000}
+        APP_GID: ${APP_GID:-1000}
+    environment:
+      DATABASE_URL: sqlite:////app/tests/output/test.db
+      DATA_DIR: /tmp/traductor-data
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic
+      - ./backend/alembic.ini:/app/alembic.ini:ro
+      - ./backend/pyproject.toml:/app/pyproject.toml:ro
+      - ./backend/tests:/app/tests
+      - ./backend/scripts:/app/scripts
+    healthcheck:
+      disable: true
+    network_mode: none
+    command: sh -c 'ruff check app tests && python -m pytest -q -m "not slow and not s3"'
+
+  frontend-test:
+    profiles: [tools]
+    image: traductor-frontend:dev
+    build:
+      context: ./frontend
+      target: dev
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+      # check.mjs y tokens.css viven fuera del contexto del frontend
+      - ./handoff:/handoff:ro
+    command: sh -c 'npx tsc --noEmit && npm run lint && npm run test && npm run build && node ../handoff/check.mjs app lib'

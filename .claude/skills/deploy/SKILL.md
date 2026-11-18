@@ -17,12 +17,24 @@ Ejecuta todo desde la raíz del repo (`traductor_libros/`).
 
 ## 1. Verificar antes de construir
 
-- Frontend cambiado: `cd frontend && npx tsc --noEmit`, `npm run lint` (0 errores), `npm run test` y
-  `node ../handoff/check.mjs app lib` (0 problemas). El smoke test de navegador (`npm run test:e2e`) se ejecuta
-  después de desplegar, con `E2E_USER_EMAIL`/`E2E_USER_PASSWORD` de una cuenta `user`.
-- Backend cambiado: `cd backend && .venv/bin/ruff check app tests` (`All checks passed!`) y
-  `.venv/bin/python -m pytest -q -m "not slow and not s3"` (todo en verde; incluye `test_alembic_check`, que
-  falla si los modelos y las migraciones divergen). No hay `python` de sistema: usa el de `.venv`.
+Se ejecuta en contenedor, con los servicios `backend-test`/`frontend-test` de `compose.dev.yml` (perfil `tools`,
+imágenes `dev` con el código montado; no montan `data/` ni leen `.env`, así que nunca tocan `data/app.db`):
+
+```bash
+DC="docker compose -f docker-compose.yml -f compose.dev.yml"
+```
+
+- Backend cambiado: `$DC run --rm backend-test` → `ruff check app tests` (`All checks passed!`) y
+  `python -m pytest -q -m "not slow and not s3"` (todo en verde; incluye `test_alembic_check`, que falla si los
+  modelos y las migraciones divergen). Sueltos: `$DC run --rm backend-test ruff check app tests`, `… python -m pytest …`.
+- Frontend cambiado: `$DC run --rm frontend-test` → `tsc --noEmit`, `npm run lint` (0 errores), `npm run test`,
+  `npm run build` y `node ../handoff/check.mjs app lib` (0 problemas). Sueltos: `$DC run --rm frontend-test npm run lint`.
+  El smoke test de navegador (`npm run test:e2e`) se ejecuta después de desplegar, con
+  `E2E_USER_EMAIL`/`E2E_USER_PASSWORD` de una cuenta `user`.
+- Si cambió `backend/pyproject.toml` o `frontend/package.json`: añade `--build` al `run` (reconstruye la imagen `dev`).
+
+Alternativa en el host, si ya existe el entorno local (opcional): `cd backend && .venv/bin/ruff check app tests &&
+.venv/bin/python -m pytest -q -m "not slow and not s3"`; `cd frontend && npx tsc --noEmit && npm run lint && npm run test`.
 
 Si algo falla, corrige antes de desplegar.
 
