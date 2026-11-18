@@ -2,7 +2,7 @@
 
 - **Severidad:** Medio
 - **Categoría:** Herramientas
-- **Estado:** abierto
+- **Estado:** resuelto · commit(s) `dd60b32`
 - **Ubicación:** `.claude/skills/deploy/SKILL.md` (paso 1), `backend/Dockerfile` (instala solo `dependencies`, sin `dev`), `frontend/Dockerfile`
 - **Aceptación:** [02-tests-lint-en-contenedor.aceptacion.md](02-tests-lint-en-contenedor.aceptacion.md)
 
