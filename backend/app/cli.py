@@ -7,6 +7,7 @@ Uso:
   python -m app.cli auth-recover --email admin@ejemplo.com [--name "Nombre"]   # recuperar el acceso de admin
   python -m app.cli active-jobs                         # trabajos en curso (antes de reiniciar el worker)
   python -m app.cli purge [--dry-run]                   # borra sesiones cerradas, límites vencidos y eventos viejos
+  python -m app.cli backup once|loop                    # copia de la BD + retención + purga (ahora | cada día)
 """
 from __future__ import annotations
 
@@ -137,9 +138,11 @@ def main(argv=None) -> None:
     sub.add_parser("active-jobs", help="lista los trabajos que no han terminado")
     pu = sub.add_parser("purge", help="borra sesiones cerradas, ventanas de rate limit vencidas y eventos viejos")
     pu.add_argument("--dry-run", action="store_true", help="solo cuenta las filas que borraría")
+    b = sub.add_parser("backup", help="copia consistente de la BD en DATA_DIR/backups, retención y purga")
+    b.add_argument("mode", choices=["once", "loop"], help="once = ahora; loop = cada día a BACKUP_HOUR (UTC)")
     args = ap.parse_args(argv)
     {"analyze": cmd_analyze, "translate": cmd_translate, "epub": cmd_epub, "auth-recover": cmd_auth_recover,
-     "active-jobs": cmd_active_jobs, "purge": cmd_purge}[args.cmd](args)
+     "active-jobs": cmd_active_jobs, "purge": cmd_purge, "backup": cmd_backup}[args.cmd](args)
 
 
 def cmd_auth_recover(args) -> None:
@@ -190,6 +193,16 @@ def cmd_purge(args) -> None:
     verb = "se borrarían" if args.dry_run else "borradas"
     for table, n in counts.items():
         print(f"{table}: {n} {verb}")
+
+
+def cmd_backup(args) -> None:
+    from app import backup
+
+    logging.getLogger("app.backup").setLevel(logging.INFO)
+    if args.mode == "loop":
+        backup.loop()
+    else:
+        backup.run_once()
 
 
 def cmd_epub(args) -> None:

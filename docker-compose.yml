@@ -47,6 +47,18 @@ services:
       api:
         condition: service_healthy
 
+  # Copia diaria de data/app.db en data/backups/app-AAAA-MM-DD.db (API de backup de sqlite3, consistente con WAL;
+  # conserva BACKUP_KEEP) + purga diaria (app.cli purge), a BACKUP_HOUR UTC. Sin cron en el host.
+  # Forzar una ejecución ahora: docker compose run --rm backup python -m app.cli backup once
+  backup:
+    <<: *backend
+    command: python -m app.cli backup loop
+    healthcheck:
+      disable: true
+    depends_on:
+      api:
+        condition: service_healthy
+
   frontend:
     build:
       context: ./frontend

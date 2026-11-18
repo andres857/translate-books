@@ -29,6 +29,10 @@ services:
     image: traductor-backend:dev
     volumes: *backend-dev-code
 
+  backup:
+    image: traductor-backend:dev
+    volumes: *backend-dev-code
+
   storage-init:
     image: traductor-backend:dev
 

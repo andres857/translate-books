@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     # purga (`python -m app.cli purge`): sesiones revocadas o caducadas hace más de N días y eventos de seguridad
     auth_sessions_retention_days: float = 30
     auth_events_retention_days: float = 180
+    # copia diaria de la BD (`python -m app.cli backup`, servicio `backup` del compose): copias que se conservan
+    # en DATA_DIR/backups y hora (0-23, UTC, la del contenedor) de la copia + purga diaria
+    backup_keep: int = 7
+    backup_hour: int = 3
 
     max_upload_mb: int = 200
     translation_concurrency: int = 10
@@ -86,6 +90,10 @@ class Settings(BaseSettings):
     @property
     def outputs_dir(self) -> Path:
         return self.data_dir / "outputs"
+
+    @property
+    def backups_dir(self) -> Path:
+        return self.data_dir / "backups"
 
 
 @lru_cache

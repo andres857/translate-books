@@ -43,7 +43,7 @@ Si algo falla, corrige antes de desplegar.
 | Cambió | Comando |
 |---|---|
 | Solo `frontend/` | `docker compose up -d --build --no-deps frontend` |
-| `backend/` (código, migraciones, Dockerfile) | ver paso 3, luego `docker compose up -d --build --no-deps api worker` |
+| `backend/` (código, migraciones, Dockerfile) | ver paso 3, luego `docker compose up -d --build --no-deps api worker backup` (`backup` usa la misma imagen: copia + purga diarias) |
 | Ambos o `docker-compose.yml` | paso 3, luego `docker compose up -d --build` |
 
 Usa `timeout` largo (hasta 600000 ms): el build de Next tarda.

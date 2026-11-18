@@ -14,7 +14,7 @@ pipeline: análisis → protección → traducción (DeepSeek) → reconstrucci�
 git clone https://github.com/lore2203/traductor_libros.git
 cd traductor_libros
 cp .env.example .env        # en Windows: copy .env.example .env
-mkdir data                  # créala tú: si la crea Docker queda a nombre de root
+mkdir data                  # créala tú: si la crea Docker queda a nombre de root (data/backups la crea el servicio backup)
 docker compose up --build -d
 ```
 
@@ -179,8 +179,49 @@ La aplicación pide correo y contraseña. No hay autorregistro: las cuentas las 
 - **Purga de datos de login**: `docker compose exec api python -m app.cli purge` borra las sesiones revocadas
   o caducadas hace más de 30 días (`AUTH_SESSIONS_RETENTION_DAYS`), las ventanas del límite de intentos ya
   vencidas y los eventos de la bitácora de seguridad de más de 180 días (`AUTH_EVENTS_RETENTION_DAYS`).
-  Con `--dry-run` solo muestra cuántas filas borraría por tabla. La caché de traducciones no se purga. No corre
-  sola: prográmala si quieres (p. ej. un cron diario en el host con ese mismo comando).
+  Con `--dry-run` solo muestra cuántas filas borraría por tabla. La caché de traducciones no se purga. Corre
+  sola cada día en el servicio `backup` (ver «Copias de seguridad y purga»), sin cron en el host.
+
+## Copias de seguridad y purga (servicio `backup`)
+
+`docker compose up -d` arranca también `backup` (misma imagen que `api`, mismo usuario `APP_UID`): cada día a las
+`BACKUP_HOUR` UTC (3 por defecto) copia `data/app.db` en `data/backups/app-AAAA-MM-DD.db`, borra las copias más
+antiguas dejando las `BACKUP_KEEP` más recientes (7) y ejecuta la purga de datos de login (`app.cli purge`). Al
+arrancar, si falta la copia del día, la hace en ese momento (sirve en un equipo que no está encendido a esa hora).
+Lo que hace queda en `docker compose logs backup`.
+
+- **Copia consistente**: usa la API de backup de sqlite3, así que es válida aunque `api` y `worker` estén escribiendo
+  (WAL); cada copia es un solo archivo (`journal_mode=DELETE`) que pasa `PRAGMA integrity_check` antes de quedar con
+  su nombre definitivo. Una segunda copia el mismo día reemplaza la de ese día.
+- **Forzar una copia ahora** (p. ej. antes de una migración):
+  `docker compose run --rm backup python -m app.cli backup once`.
+- **Retención**: solo cuenta los archivos `data/backups/app-AAAA-MM-DD.db`; las copias manuales
+  (`data/app.db.bak-*`) nunca se borran.
+- **Qué no cubre**: los PDF de `data/uploads` y `data/outputs` ni el volumen de SeaweedFS; y las copias están en el
+  mismo disco. Para protegerte de un disco roto, copia `data/` (o al menos `data/backups/`) a otro disco.
+
+**Restaurar una copia** (reemplaza la BD: para `api`, `worker` y `backup`, que son los que la abren):
+
+```bash
+docker compose exec -T api python -m app.cli active-jobs   # debe decir «sin trabajos activos»
+docker compose stop backup worker api
+# aparta la BD actual con su -wal/-shm (no la borres hasta comprobar la restaurada)
+d=data/antes-de-restaurar-$(date +%Y%m%d-%H%M); mkdir "$d" && mv data/app.db data/app.db-wal data/app.db-shm "$d"/ 2>/dev/null
+cp data/backups/app-2026-11-18.db data/app.db
+docker compose up -d
+curl -fsS localhost:8000/api/health                        # {"ok":true}
+```
+
+Si había trabajos activos, espera a que terminen (o cancélalos) antes de parar `worker`. Para comprobar una copia sin
+tocar `data/app.db`, arráncala en un contenedor aparte con otra carpeta y otro puerto:
+
+```bash
+mkdir -p /tmp/prueba-restaurar && cp data/backups/app-2026-11-18.db /tmp/prueba-restaurar/app.db
+docker run -d --rm --name prueba-restaurar --user "$(id -u):$(id -g)" -v /tmp/prueba-restaurar:/data \
+  -e DATABASE_URL=sqlite:////data/app.db -e DATA_DIR=/data -p 127.0.0.1:8765:8000 traductor-backend \
+  sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+sleep 10; curl -fsS localhost:8765/api/health; docker stop prueba-restaurar
+```
 
 ## Administración (`/admin`)
 
@@ -222,6 +263,7 @@ solo lo usa `docker compose` (producción y `compose.dev.yml`); **ambos** = lo l
 | `SESSION_MAX_HOURS` / `SESSION_IDLE_MINUTES` / `COOKIE_SECURE` | ambos | Duración de la sesión y cookie `Secure` (`auto`, `true`, `false`). |
 | `TRUSTED_PROXIES` | ambos | Redes del proxy propio (el frontend). Desde ellas la IP del usuario es desconocida y el límite de intentos usa solo el correo y el total. El compose usa por defecto las redes internas de Docker; sin Docker, vacío. |
 | `AUTH_SESSIONS_RETENTION_DAYS` / `AUTH_EVENTS_RETENTION_DAYS` | ambos | Días que `app.cli purge` conserva las sesiones revocadas o caducadas (30) y los eventos de seguridad (180). |
+| `BACKUP_KEEP` / `BACKUP_HOUR` | ambos | Copias diarias de la BD que se conservan en `data/backups` (7) y hora UTC (0-23) de la copia y la purga diarias del servicio `backup` (3). |
 | `STORAGE_DRIVER` / `S3_REGION` / `S3_BUCKET` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` / `S3_FORCE_PATH_STYLE` | ambos | Almacenamiento S3 (por defecto, SeaweedFS local con las credenciales de `infra/seaweedfs/s3.json`). |
 | `PUBLIC_BASE_URL` | ambos | Base de las URL públicas (el CDN, `http://localhost:CDN_PORT/uploads`). |
 | `UPLOAD_MAX_SIZE_MB` / `UPLOAD_ALLOWED_MIME` | ambos | Límites de `/api/files`. |
