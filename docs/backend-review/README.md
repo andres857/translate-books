@@ -205,3 +205,32 @@ qa-admin desactivada y sin sesiones abiertas, credenciales borradas; el libro #1
 Limpieza: libros QA #2, #3 y #4 borrados (con sus archivos); qa-user desactivada desde Usuarios y qa-admin con el servicio
 de usuarios de la app dentro del contenedor `api` (no puede desactivarse a sí misma); sin sesiones QA abiertas;
 credenciales borradas del scratchpad. El libro #1 sigue con 192 páginas y 3345 bloques (`data/app.db` en solo lectura).
+
+**Contraseña obligatoria, reautenticación, preparar y huérfanos** (pasada aparte, sin gastar; cuentas QA reactivadas solo
+para ella, Chrome con Playwright contra localhost:3100):
+
+- **Cambio obligatorio de contraseña.** Tras `app.cli auth-recover --email qa-admin@…`, el login con la temporal lleva a
+  /change-password («Elige tu contraseña»); `/`, `/admin/users`, `/admin/playground` y `/glossary` redirigen allí;
+  `GET /api/jobs` y `/api/settings` → 403 `PASSWORD_CHANGE_REQUIRED`; `/api/auth/me` da sesión `restricted`. Al guardar
+  la nueva en el formulario, la app va a `/`, `/api/jobs` → 200, sesión `normal`, y la temporal ya no entra (401).
+  Lo mismo con qa-user tras «Contraseña temporal» en Usuarios (la fila muestra «Pendiente de cambiar la contraseña»).
+- **Reautenticación.** qa-admin, recién entrada y sin confirmar: `PATCH /api/users/4` (nombre) y
+  `POST /api/users/4/reset-password` → 409 `REAUTH_REQUIRED`; en Usuarios, «Activar» qa-user → `PATCH` 409 y diálogo
+  «Confirma tu contraseña» (sigue «Desactivada»); al confirmar, `POST /api/auth/reauthenticate` 200, se repite el
+  `PATCH` (200) y queda «Activa»; el reset inmediato ya no pide confirmar (200, temporal mostrada).
+- **Preparar para el Playground.** «Subir un libro nuevo» con un PDF en blanco de 2 páginas → «Libro listo para
+  evaluar» en 2 s («Sin traducir · no se ha gastado saldo»); trabajo `done`, `options {"mode": "prepare"}`, 2 páginas y
+  0 bloques. Log del worker: «Glosario: 0 candidatos … 0 términos»: con 0 candidatos `discover_glossary` vuelve antes de
+  `extract_glossary`, así que no llama al modelo.
+- **Huérfanos.** Con un segundo libro QA preparado igual (#3) y sin otros trabajos activos (`app.cli active-jobs` solo
+  listaba el #3; libro #1 `done`, 0 evaluaciones en cola), se puso solo esa fila en `running` desde el contenedor `api`
+  y se hizo `docker compose restart worker`: «Worker iniciado» y luego «Procesando trabajo 3» (`claim_job` solo toma
+  trabajos `queued`, así que `recover_orphans` lo devolvió a la cola), «preparado: 2 páginas, 0 bloques» y `done`
+  sin error.
+- **Cero llamadas al modelo.** En `docker compose logs worker api` desde el inicio de la pasada, 0 líneas con `httpx`,
+  `HTTP Request`, `deepseek` o `chat/completions`; la caché sigue con 2141 filas `deepseek-flash` y ninguna `fake`.
+
+Limpieza: libros QA #2 y #3 borrados desde el Playground (`GET /api/jobs/2` y `/3` → 404); qa-user desactivada por la
+API y qa-admin con el servicio de usuarios dentro del contenedor `api`, sin sesiones abiertas; credenciales borradas
+del scratchpad. Solo queda el libro #1 (192 páginas, 3345 bloques; `data/app.db` en solo lectura), sin páginas ni
+bloques huérfanos, y los 5 contenedores siguen arriba.
