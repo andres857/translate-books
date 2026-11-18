@@ -96,6 +96,9 @@ Una dependencia nueva que falte en el archivo se instalaría sin fijar: el paso 
 
 ## Desarrollo local (sin Docker)
 
+Descomenta en `.env` el bloque «Solo sin Docker» (al menos `S3_ENDPOINT=http://localhost:8333`, con el SeaweedFS
+del compose arriba); el backend lee `.env` y `../.env` desde `backend/`. Ver «Configuración (`.env`)».
+
 ```bash
 python -m venv .venv && .venv/Scripts/pip install -e "backend[dev]"   # Linux/Mac: .venv/bin/pip
 cd backend
@@ -198,23 +201,39 @@ Los estilos de toda la interfaz salen de `handoff/tokens.css` (copiado a `fronte
 
 ## Configuración (`.env`)
 
-| Variable | Descripción |
-|---|---|
-| `DEEPSEEK_API_KEY` | Llave de DeepSeek. Nunca se guarda en BD ni se envía al frontend. |
-| `DEEPSEEK_MODEL` | Modelo de traducción (`deepseek-flash`). |
-| `MAX_UPLOAD_MB` | Tamaño máximo del PDF. |
-| `DEEPSEEK_THINKING` | Razonamiento del modelo al traducir: `high` (por defecto, máxima calidad), `low`, `disabled` (unas 2-3 veces más rápido, calidad algo menos pulida). |
-| `TRANSLATION_CONCURRENCY` | Solicitudes simultáneas a la API (por defecto 10). |
-| `MIN_FONT_SCALE` / `MIN_FONT_SIZE_PT` | Límite de reducción del texto. Solo se pide revisión si el texto queda por debajo del tamaño mínimo legible o se superpone con otro bloque. |
-| `FAKE_TRANSLATOR` | `true` para probar sin API. |
-| `WEB_PORT` / `API_PORT` | Puertos publicados por `docker compose` (3000 / 8000). |
-| `APP_UID` / `APP_GID` | Usuario con el que corren los contenedores (dueño de `data/`). |
-| `CORS_ORIGINS` | Origen exacto del navegador (`http://localhost:WEB_PORT`): CORS y comprobación de `Origin` en escrituras. |
-| `ADMIN_BOOTSTRAP_EMAIL` / `ADMIN_BOOTSTRAP_PASSWORD` / `ADMIN_BOOTSTRAP_NAME` | Admin inicial (ver «Acceso»). |
-| `TRUSTED_PROXIES` | Redes del proxy propio (el frontend). Desde ellas la IP del usuario es desconocida y el límite de intentos usa solo el correo y el total. El compose usa las redes internas de Docker. |
-| `SESSION_MAX_HOURS` / `SESSION_IDLE_MINUTES` / `COOKIE_SECURE` | Duración de la sesión y cookie `Secure` (`auto`, `true`, `false`). |
-| `AUTH_SESSIONS_RETENTION_DAYS` / `AUTH_EVENTS_RETENTION_DAYS` | Días que `app.cli purge` conserva las sesiones revocadas o caducadas (30) y los eventos de seguridad (180). |
-| `EBOOK_CONVERT_BIN` | Ruta de `ebook-convert` (Calibre) si no está en el `PATH`. |
+`.env.example` (cópialo a `.env`) trae solo lo que se elige al usar Docker, agrupado y comentado. Modo: **Docker** =
+solo lo usa `docker compose` (producción y `compose.dev.yml`); **ambos** = lo lee el backend en Docker y sin Docker;
+**sin Docker** = Docker lo ignora porque `docker-compose.yml` fija el valor interno. Los servicios `backend-test` y
+`frontend-test` no leen `.env`.
+
+| Variable | Modo | Descripción |
+|---|---|---|
+| `WEB_PORT` / `API_PORT` | Docker | Puertos publicados por `docker compose` (3000 / 8000). El compose deriva `CORS_ORIGINS` de `WEB_PORT`. |
+| `APP_UID` / `APP_GID` | Docker | Usuario con el que corren los contenedores (dueño de `data/`). |
+| `DEEPSEEK_API_KEY` | ambos | Llave de DeepSeek. Nunca se guarda en BD ni se envía al frontend. |
+| `DEEPSEEK_BASE_URL` / `DEEPSEEK_MODEL` / `DEEPSEEK_VISION_MODEL` | ambos | API y modelos (`deepseek-flash`). |
+| `DEEPSEEK_THINKING` | ambos | Razonamiento del modelo al traducir: `high` (por defecto, máxima calidad), `low`, `disabled` (unas 2-3 veces más rápido, calidad algo menos pulida). |
+| `FAKE_TRANSLATOR` | ambos | `true` para probar sin API. |
+| `MAX_UPLOAD_MB` | ambos | Tamaño máximo del PDF. |
+| `TRANSLATION_CONCURRENCY` | ambos | Solicitudes simultáneas a la API (por defecto 10). |
+| `MIN_FONT_SCALE` / `MIN_FONT_SIZE_PT` | ambos | Límite de reducción del texto. Solo se pide revisión si el texto queda por debajo del tamaño mínimo legible o se superpone con otro bloque. |
+| `EBOOK_CONVERT_BIN` | ambos | Ruta de `ebook-convert` (Calibre) si no está en el `PATH` (la imagen ya lo trae). |
+| `ADMIN_BOOTSTRAP_EMAIL` / `ADMIN_BOOTSTRAP_PASSWORD` / `ADMIN_BOOTSTRAP_NAME` | ambos | Admin inicial (ver «Acceso»). |
+| `SESSION_MAX_HOURS` / `SESSION_IDLE_MINUTES` / `COOKIE_SECURE` | ambos | Duración de la sesión y cookie `Secure` (`auto`, `true`, `false`). |
+| `TRUSTED_PROXIES` | ambos | Redes del proxy propio (el frontend). Desde ellas la IP del usuario es desconocida y el límite de intentos usa solo el correo y el total. El compose usa por defecto las redes internas de Docker; sin Docker, vacío. |
+| `AUTH_SESSIONS_RETENTION_DAYS` / `AUTH_EVENTS_RETENTION_DAYS` | ambos | Días que `app.cli purge` conserva las sesiones revocadas o caducadas (30) y los eventos de seguridad (180). |
+| `STORAGE_DRIVER` / `S3_REGION` / `S3_BUCKET` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` / `S3_FORCE_PATH_STYLE` | ambos | Almacenamiento S3 (por defecto, SeaweedFS local con las credenciales de `infra/seaweedfs/s3.json`). |
+| `PUBLIC_BASE_URL` | ambos | Base de las URL públicas (el CDN, `http://localhost:CDN_PORT/uploads`). |
+| `UPLOAD_MAX_SIZE_MB` / `UPLOAD_ALLOWED_MIME` | ambos | Límites de `/api/files`. |
+| `S3_CORS_ORIGINS` | ambos | Orígenes autorizados a subir con URL prefirmada (CORS del bucket). En Docker, sin definir: `localhost:3000`, `:5173` y `:WEB_PORT`. |
+| `S3_PORT` / `CDN_PORT` | Docker | Puertos publicados de SeaweedFS (8333) y del CDN (8080). |
+| `S3_INTERNAL_ENDPOINT` / `S3_PUBLIC_ENDPOINT` | Docker | Endpoint S3 desde el contenedor (`http://seaweedfs:8333`) y el que ve el navegador para las URL prefirmadas y la CSP (`http://localhost:S3_PORT`). Cambiarlos solo con otro proveedor. |
+| `DATABASE_URL` / `DATA_DIR` | sin Docker | BD y carpeta de datos (`sqlite:///./data/app.db`, `./data`, relativos a `backend/`). En Docker: `/data/app.db` y `/data` (= `./data` del repo). |
+| `S3_ENDPOINT` | sin Docker | Endpoint S3 visto desde el host (`http://localhost:8333`; vacío = AWS). En Docker lo fija el compose a partir de `S3_INTERNAL_ENDPOINT`. |
+| `CORS_ORIGINS` | sin Docker | Origen exacto del navegador (`http://localhost:3000`): CORS y comprobación de `Origin` en escrituras. En Docker: `http://localhost:WEB_PORT`. |
+
+Las variables «sin Docker» están comentadas al final de `.env.example` (bloque «Solo sin Docker»): descoméntalas para
+el modo local; `S3_ENDPOINT` es la única sin un valor por defecto útil fuera de Docker.
 
 ## Almacenamiento de archivos (S3 + CDN)
 
